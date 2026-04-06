@@ -1,5 +1,6 @@
 """Configuration loading for wickd-proxy."""
 
+import logging
 import os
 from dataclasses import dataclass, field
 from typing import Optional
@@ -40,6 +41,10 @@ class ProxyConfig:
             if isinstance(api_key, str) and api_key.startswith("${") and api_key.endswith("}"):
                 env_var = api_key[2:-1]
                 api_key = os.environ.get(env_var, "")
+                if not api_key:
+                    logging.getLogger("wickd").warning(
+                        "Environment variable %s not set for provider %s", env_var, name
+                    )
             providers[name] = ProviderConfig(api_key=api_key, base_url=pdata.get("base_url"))
 
         return cls(

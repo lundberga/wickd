@@ -10,7 +10,9 @@ Usage:
 """
 
 import json
+import logging
 import time
+from contextlib import asynccontextmanager
 from typing import Optional
 
 import httpx
@@ -23,7 +25,10 @@ from wickd.budget import Budget, BudgetTracker, BudgetExceeded
 from wickd.pricing import calculate_cost
 from wickd.trace import Trace, TraceStore
 
+from wickd_proxy import __version__
 from wickd_proxy.config import ProxyConfig
+
+logger = logging.getLogger("wickd")
 
 # Provider upstream URLs
 PROVIDER_UPSTREAMS = {
@@ -89,9 +94,7 @@ async def _proxy_request(request: Request, provider: str, state: ProxyState) -> 
                 }
             }, status_code=429)
 
-    # Build upstream URL
-    # Request path is like /openai/v1/chat/completions
-    # We need to strip the /openai prefix
+    # Strip the /{provider} prefix from path
     path = request.url.path
     prefix = f"/{provider}"
     if path.startswith(prefix):
@@ -113,7 +116,6 @@ async def _proxy_request(request: Request, provider: str, state: ProxyState) -> 
         elif provider == "anthropic":
             headers["x-api-key"] = provider_config.api_key
         elif provider == "google":
-            # Google uses query param or header
             headers["x-goog-api-key"] = provider_config.api_key
 
     body = await request.body()
@@ -151,13 +153,13 @@ async def _proxy_request(request: Request, provider: str, state: ProxyState) -> 
             cost = calculate_cost(model, in_tok, out_tok)
             if state.tracker:
                 try:
-                    state.tracker.record_cost(cost, model, in_tok, out_tok)
-                except BudgetExceeded:
-                    pass  # Will be caught on next pre_call_check
+                    state.tracker.record_cost(cost)
+                except BudgetExceeded as e:
+                    logger.warning("Budget exceeded after response: %s", e)
             state.total_cost += cost
             state.total_requests += 1
-        except (json.JSONDecodeError, ValueError):
-            pass
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.debug("Failed to parse response body for cost tracking: %s", e)
 
     # Forward response headers
     resp_headers = dict(resp.headers)
@@ -210,18 +212,27 @@ async def _proxy_streaming(
                             elif event_type == "message_delta":
                                 usage = chunk.get("usage", {})
                                 accumulated_output = usage.get("output_tokens", 0)
-                    except (json.JSONDecodeError, ValueError):
-                        pass
+                        elif provider == "google":
+                            # Google streams JSON objects; usage in last chunk
+                            data = chunk.get("usageMetadata")
+                            if data:
+                                accumulated_input = data.get("promptTokenCount", 0)
+                                accumulated_output = data.get("candidatesTokenCount", 0)
+                            model_ver = chunk.get("modelVersion")
+                            if model_ver:
+                                model = model_ver
+                    except (json.JSONDecodeError, ValueError) as e:
+                        logger.debug("Failed to parse streaming chunk: %s", e)
 
-            # Record cost on stream completion
-            cost = calculate_cost(model, accumulated_input, accumulated_output)
-            if state.tracker and cost > 0:
-                try:
-                    state.tracker.record_cost(cost, model, accumulated_input, accumulated_output)
-                except BudgetExceeded:
-                    pass
-            state.total_cost += cost
-            state.total_requests += 1
+        # Record cost on stream completion
+        cost = calculate_cost(model, accumulated_input, accumulated_output)
+        if state.tracker and cost > 0:
+            try:
+                state.tracker.record_cost(cost)
+            except BudgetExceeded as e:
+                logger.warning("Budget exceeded after streaming response: %s", e)
+        state.total_cost += cost
+        state.total_requests += 1
 
     return StreamingResponse(
         stream_generator(),
@@ -247,7 +258,7 @@ async def status_endpoint(request: Request) -> JSONResponse:
     """Detailed status endpoint."""
     state: ProxyState = request.app.state.proxy
     return JSONResponse({
-        "version": "0.1.0",
+        "version": __version__,
         "upstreams": PROVIDER_UPSTREAMS,
         "providers_configured": list(state.config.providers.keys()),
         "budget": state.tracker.summary() if state.tracker else None,
@@ -266,6 +277,11 @@ def create_app(config: ProxyConfig) -> Starlette:
     """Create the Starlette proxy application."""
     state = ProxyState(config)
 
+    @asynccontextmanager
+    async def lifespan(app):
+        yield
+        await app.state.proxy.close()
+
     routes = [
         Route("/health", health_endpoint),
         Route("/status", status_endpoint),
@@ -275,11 +291,7 @@ def create_app(config: ProxyConfig) -> Starlette:
         Mount("/google", routes=[Route("/{path:path}", _make_provider_route("google"), methods=["GET", "POST", "PUT", "DELETE", "PATCH"])]),
     ]
 
-    app = Starlette(routes=routes)
+    app = Starlette(routes=routes, lifespan=lifespan)
     app.state.proxy = state
-
-    @app.on_event("shutdown")
-    async def shutdown():
-        await state.close()
 
     return app

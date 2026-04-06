@@ -57,11 +57,11 @@ export class TraceEvent {
     if (this.latencyMs != null) result.latencyMs = this.latencyMs;
     if (this.promptPreview != null) result.promptPreview = this.promptPreview;
     if (this.responsePreview != null) result.responsePreview = this.responsePreview;
-    if (this.toolName != null) (result as unknown as Record<string, unknown>).toolName = this.toolName;
-    if (this.toolInputPreview != null) (result as unknown as Record<string, unknown>).toolInputPreview = this.toolInputPreview;
-    if (this.toolOutputPreview != null) (result as unknown as Record<string, unknown>).toolOutputPreview = this.toolOutputPreview;
-    if (this.toolStatus != null) (result as unknown as Record<string, unknown>).toolStatus = this.toolStatus;
-    if (this.toolServer != null) (result as unknown as Record<string, unknown>).toolServer = this.toolServer;
+    if (this.toolName != null) result.toolName = this.toolName;
+    if (this.toolInputPreview != null) result.toolInputPreview = this.toolInputPreview;
+    if (this.toolOutputPreview != null) result.toolOutputPreview = this.toolOutputPreview;
+    if (this.toolStatus != null) result.toolStatus = this.toolStatus;
+    if (this.toolServer != null) result.toolServer = this.toolServer;
     if (this.approvalName != null) result.approvalName = this.approvalName;
     if (this.approvalStatus != null) result.approvalStatus = this.approvalStatus;
     if (this.budgetTrigger != null) result.budgetTrigger = this.budgetTrigger;

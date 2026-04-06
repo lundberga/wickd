@@ -93,7 +93,7 @@ export class BudgetTracker {
     }
   }
 
-  recordCost(cost: number, _model = "", _inputTokens = 0, _outputTokens = 0): void {
+  recordCost(cost: number): void {
     this._runSpend += cost;
     this._dailySpend += cost;
     this._monthlySpend += cost;

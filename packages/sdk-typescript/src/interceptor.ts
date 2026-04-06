@@ -212,7 +212,7 @@ function finalizeStream(state: StreamState): void {
       promptPreview: state.promptPreview, responsePreview: state.responsePreview,
     });
   }
-  getActiveTracker()?.recordCost(cost, state.model, state.inputTokens, state.outputTokens);
+  getActiveTracker()?.recordCost(cost);
 }
 
 function wrapAsyncStream(
@@ -289,7 +289,7 @@ function makeWrapper(
         promptPreview, responsePreview,
       });
     }
-    getActiveTracker()?.recordCost(cost, model, inputTokens, outputTokens);
+    getActiveTracker()?.recordCost(cost);
     return response;
   };
   (fn as unknown as Record<string, unknown>)[SENTINEL] = true;

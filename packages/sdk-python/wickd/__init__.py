@@ -14,6 +14,7 @@ from wickd.interceptor import patch_openai, patch_anthropic, patch_google, patch
 from wickd.tools import track_tool, tool_approval, record_tool_call
 from wickd import notify
 from wickd.notify import slack_interactive
+from wickd import pricing
 
 __version__ = "0.1.0"
 
@@ -44,5 +45,6 @@ __all__ = [
     "record_tool_call",
     "notify",
     "slack_interactive",
+    "pricing",
     "__version__",
 ]

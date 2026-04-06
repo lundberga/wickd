@@ -3,7 +3,7 @@
 Runtime safety net for AI agents. Budget limits, kill switches, and approval gates — inside your agent, across every provider and tool.
 
 ```
-pip install wickd
+pip install wickd-ai
 ```
 
 ```

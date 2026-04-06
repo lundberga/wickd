@@ -1,4 +1,4 @@
-import type { NotificationEvent } from "@wickdone/core";
+import type { NotificationEvent } from "wickd-core";
 
 export type NotifyHandler = (event: NotificationEvent) => void | Promise<void>;
 

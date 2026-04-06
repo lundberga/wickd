@@ -5,7 +5,7 @@
  * Supports both streaming and non-streaming responses.
  */
 
-import { calculateCost } from "@wickdone/core";
+import { calculateCost } from "wickd-core";
 import { Trace } from "./trace.js";
 import { BudgetTracker } from "./budget.js";
 import { AsyncLocalStorage } from "node:async_hooks";

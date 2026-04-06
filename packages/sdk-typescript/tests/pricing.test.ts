@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { getPrice, calculateCost, FALLBACK_PRICE } from "@wickdone/core";
+import { getPrice, calculateCost, FALLBACK_PRICE } from "wickd-core";
 
 describe("getPrice", () => {
   it("returns exact match", () => {

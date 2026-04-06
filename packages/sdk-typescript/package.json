@@ -27,8 +27,12 @@
     "directory": "packages/sdk-typescript"
   },
   "license": "MIT",
+  "files": ["dist", "README.md"],
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {
-    "@wickdone/core": "*"
+    "wickd-core": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.0",

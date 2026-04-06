@@ -10,3 +10,4 @@ __pycache__/
 .env.local
 .DS_Store
 package-lock.json
+CLAUDE.md

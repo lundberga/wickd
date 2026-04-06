@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "wickd-agents"
+name = "wickd-ai"
 version = "0.1.0"
 description = "Guardrails for AI agents — budget limits, kill switches, and human approval gates."
 readme = "README.md"

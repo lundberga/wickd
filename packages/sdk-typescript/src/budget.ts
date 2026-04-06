@@ -1,4 +1,4 @@
-import type { BudgetConfig, BudgetSummary } from "@wickdone/core";
+import type { BudgetConfig, BudgetSummary } from "wickd-core";
 
 export class BudgetExceeded extends Error {
   readonly budget: BudgetConfig;

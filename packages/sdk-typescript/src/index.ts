@@ -27,7 +27,7 @@ export {
 export * as notify from "./notify.js";
 export { slackInteractive } from "./notify.js";
 
-export { calculateCost, getPrice, MODEL_PRICES, FALLBACK_PRICE } from "@wickdone/core";
+export { calculateCost, getPrice, MODEL_PRICES, FALLBACK_PRICE } from "wickd-core";
 export type {
   BudgetConfig,
   BudgetSummary,
@@ -36,4 +36,4 @@ export type {
   TraceEvent as TraceEventType,
   TraceStatus,
   NotificationEvent,
-} from "@wickdone/core";
+} from "wickd-core";

@@ -2,7 +2,7 @@ import { Budget, BudgetTracker, BudgetExceeded, WickdPatchError } from "./budget
 import { Trace, TraceStore, TraceEvent, CloudTraceSync } from "./trace.js";
 import { patchAll, verifyPatches, runWithContext } from "./interceptor.js";
 import type { NotifyHandler } from "./notify.js";
-import type { NotificationEvent, BudgetSummary } from "@wickdone/core";
+import type { NotificationEvent, BudgetSummary } from "wickd-core";
 
 export interface AgentOptions<TArgs extends unknown[], TReturn> {
   fn: (...args: TArgs) => TReturn | Promise<TReturn>;

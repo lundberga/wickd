@@ -1,5 +1,5 @@
 {
-  "name": "@wickdone/core",
+  "name": "wickd-core",
   "version": "0.1.0",
   "description": "Shared trace schema, cost tables, and types for Wickd",
   "type": "module",
@@ -25,6 +25,10 @@
     "type": "git",
     "url": "https://github.com/lundberga/wickd",
     "directory": "packages/core"
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
   },
   "license": "MIT"
 }

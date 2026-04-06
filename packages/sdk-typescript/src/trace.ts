@@ -8,7 +8,7 @@ import type {
   TraceStatus,
   Trace as CoreTrace,
   BudgetSummary,
-} from "@wickdone/core";
+} from "wickd-core";
 
 export class TraceEvent {
   eventType: TraceEventType;

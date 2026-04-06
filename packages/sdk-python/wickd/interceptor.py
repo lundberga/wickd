@@ -54,7 +54,7 @@ def _record_call(provider: str, model: str, input_tokens: int, output_tokens: in
         )
     tracker = get_active_tracker()
     if tracker:
-        tracker.record_cost(cost, model, input_tokens, output_tokens)
+        tracker.record_cost(cost)
     return cost
 
 
@@ -526,6 +526,176 @@ def _resolve_anthropic_async():
         return None
 
 
+class _WickdMessageStreamManager:
+    """Wraps Anthropic's MessageStreamManager to track cost from stream events."""
+
+    def __init__(self, original_manager, kwargs):
+        self._manager = original_manager
+        self._kwargs = kwargs
+        self._start = time.time()
+
+    def __enter__(self):
+        stream = self._manager.__enter__()
+        return _WickdMessageStream(stream, self._kwargs, self._start)
+
+    def __exit__(self, *args):
+        return self._manager.__exit__(*args)
+
+
+class _WickdAsyncMessageStreamManager:
+    """Async variant of the stream manager wrapper."""
+
+    def __init__(self, original_manager, kwargs):
+        self._manager = original_manager
+        self._kwargs = kwargs
+        self._start = time.time()
+
+    async def __aenter__(self):
+        stream = await self._manager.__aenter__()
+        return _WickdAsyncMessageStream(stream, self._kwargs, self._start)
+
+    async def __aexit__(self, *args):
+        return await self._manager.__aexit__(*args)
+
+
+class _WickdMessageStream:
+    """Wraps Anthropic's MessageStream, recording cost when the stream ends."""
+
+    def __init__(self, stream, kwargs, start_time):
+        self._stream = stream
+        self._kwargs = kwargs
+        self._start = start_time
+        self._recorded = False
+
+    def _finalize(self):
+        if self._recorded:
+            return
+        self._recorded = True
+        message = getattr(self._stream, "current_message_snapshot", None)
+        if not message:
+            return
+        model, in_tok, out_tok = _anthropic_usage(message)
+        prompt = _last_message_content(self._kwargs)
+        resp_text = _anthropic_response_text(message)
+        latency_ms = (time.time() - self._start) * 1000
+        _record_call("anthropic", model, in_tok, out_tok, latency_ms, prompt, resp_text)
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            event = next(self._stream)
+        except StopIteration:
+            self._finalize()
+            raise
+        except Exception:
+            self._finalize()
+            raise
+        return event
+
+    def close(self):
+        self._finalize()
+        if hasattr(self._stream, "close"):
+            self._stream.close()
+
+    def __del__(self):
+        try:
+            self._finalize()
+        except Exception:
+            pass
+
+
+class _WickdAsyncMessageStream:
+    """Async variant of the message stream wrapper."""
+
+    def __init__(self, stream, kwargs, start_time):
+        self._stream = stream
+        self._kwargs = kwargs
+        self._start = start_time
+        self._recorded = False
+
+    def _finalize(self):
+        if self._recorded:
+            return
+        self._recorded = True
+        message = getattr(self._stream, "current_message_snapshot", None)
+        if not message:
+            return
+        model, in_tok, out_tok = _anthropic_usage(message)
+        prompt = _last_message_content(self._kwargs)
+        resp_text = _anthropic_response_text(message)
+        latency_ms = (time.time() - self._start) * 1000
+        _record_call("anthropic", model, in_tok, out_tok, latency_ms, prompt, resp_text)
+
+    def __getattr__(self, name):
+        return getattr(self._stream, name)
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            event = await self._stream.__anext__()
+        except StopAsyncIteration:
+            self._finalize()
+            raise
+        except Exception:
+            self._finalize()
+            raise
+        return event
+
+    async def close(self):
+        self._finalize()
+        if hasattr(self._stream, "close"):
+            await self._stream.close()
+
+
+def _patch_anthropic_stream():
+    """Patch Messages.stream() and AsyncMessages.stream() to track cost."""
+    try:
+        import anthropic
+    except ImportError:
+        return
+
+    # Sync
+    try:
+        cls = anthropic.resources.messages.Messages
+        original_stream = cls.stream
+
+        def patched_stream(self, *args, **kwargs):
+            tracker = get_active_tracker()
+            if tracker:
+                tracker.pre_call_check()
+            manager = original_stream(self, *args, **kwargs)
+            return _WickdMessageStreamManager(manager, kwargs)
+
+        setattr(patched_stream, _SENTINEL, True)
+        cls.stream = patched_stream
+    except (AttributeError, Exception) as e:
+        logger.warning("Failed to patch anthropic stream: %s", e)
+
+    # Async
+    try:
+        async_cls = anthropic.resources.messages.AsyncMessages
+        original_async_stream = async_cls.stream
+
+        def patched_async_stream(self, *args, **kwargs):
+            tracker = get_active_tracker()
+            if tracker:
+                tracker.pre_call_check()
+            manager = original_async_stream(self, *args, **kwargs)
+            return _WickdAsyncMessageStreamManager(manager, kwargs)
+
+        setattr(patched_async_stream, _SENTINEL, True)
+        async_cls.stream = patched_async_stream
+    except (AttributeError, Exception) as e:
+        logger.warning("Failed to patch anthropic async stream: %s", e)
+
+
 def _resolve_google_sync():
     try:
         from google.genai import models
@@ -614,6 +784,7 @@ def patch_openai():
 
 def patch_anthropic():
     _apply_patch(_PROVIDERS[1])
+    _patch_anthropic_stream()
 
 
 def patch_google():
@@ -624,6 +795,7 @@ def patch_all():
     """Patch all supported LLM SDKs, with transport-layer fallback."""
     for provider in _PROVIDERS:
         _apply_patch(provider)
+    _patch_anthropic_stream()
 
     has_unverified = any(
         s["installed"] and not s["verified"] for s in _patch_status.values()

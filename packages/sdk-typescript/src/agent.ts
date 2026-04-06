@@ -30,8 +30,6 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
   readonly notifyHandlers: NotifyHandler[];
   readonly traceStore: TraceStore;
   private readonly _cloudSync: CloudTraceSync | null;
-  private _tracker: BudgetTracker | null = null;
-  private _trace: Trace | null = null;
 
   constructor(options: AgentOptions<TArgs, TReturn>) {
     this.fn = options.fn;
@@ -74,113 +72,105 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
     );
   }
 
-  get tracker(): BudgetTracker | null { return this._tracker; }
-  get trace(): Trace | null { return this._trace; }
-
   async run(...args: TArgs): Promise<TReturn> {
-    this._tracker = this.budget ? new BudgetTracker(this.budget) : null;
+    const tracker = this.budget ? new BudgetTracker(this.budget) : null;
 
     const taskPreview = args.length > 0 && typeof args[0] === "string"
       ? (args[0] as string).slice(0, 200)
       : "";
-    this._trace = new Trace(this.name, taskPreview);
+    const trace = new Trace(this.name, taskPreview);
 
     let result: TReturn;
 
     try {
       result = await runWithContext(
-        { tracker: this._tracker, trace: this._trace },
+        { tracker, trace },
         () => this.fn(...args),
       );
-      this._trace.complete(this._tracker?.summary());
+      trace.complete(tracker?.summary());
     } catch (err) {
       if (err instanceof BudgetExceeded) {
-        this._trace.addBudgetKill(err.trigger, err.spent);
-        this._trace.complete(this._tracker?.summary());
-        await this._fireBudgetKill(err);
+        trace.addBudgetKill(err.trigger, err.spent);
+        trace.complete(tracker?.summary());
+        await this._fireBudgetKill(err, tracker, trace);
         throw err;
       }
 
-      this._trace.status = "error";
-      this._trace.addEvent(new TraceEvent("error", {
+      trace.status = "error";
+      trace.addEvent(new TraceEvent("error", {
         errorMessage: String(err),
-        spendAtEvent: this._trace.totalCost,
+        spendAtEvent: trace.totalCost,
       }));
-      this._trace.complete(this._tracker?.summary());
+      trace.complete(tracker?.summary());
       throw err;
     } finally {
-      this.traceStore.save(this._trace);
+      this.traceStore.save(trace);
       if (this._cloudSync) {
-        this._cloudSync.sync(this._trace);
+        this._cloudSync.sync(trace);
       }
-      this._printSummary();
-      await this._fireRunComplete();
+      this._printSummary(tracker, trace);
+      await this._fireRunComplete(tracker, trace);
     }
 
     return result;
   }
 
-  private async _fireBudgetKill(err: BudgetExceeded): Promise<void> {
+  private async _fireBudgetKill(err: BudgetExceeded, tracker: BudgetTracker | null, trace: Trace): Promise<void> {
     const event: NotificationEvent = {
       type: "budget_kill",
       agentName: this.name,
       spend: err.spent,
       trigger: err.trigger,
-      traceId: this._trace?.traceId ?? "unknown",
+      traceId: trace.traceId,
     };
 
     for (const handler of this.notifyHandlers) {
-      try { await handler(event); } catch { /* notification failures are non-fatal */ }
+      try { await handler(event); } catch (e) { process.stderr.write(`wickd: handler error: ${e}\n`); }
     }
 
     if (this.onBudgetKill) {
       try {
-        await this.onBudgetKill({ ...event, summary: this._tracker?.summary() });
-      } catch { /* notification failures are non-fatal */ }
+        await this.onBudgetKill({ ...event, summary: tracker?.summary() });
+      } catch (e) { process.stderr.write(`wickd: handler error: ${e}\n`); }
     }
   }
 
-  private async _fireRunComplete(): Promise<void> {
-    if (!this._trace) return;
-
+  private async _fireRunComplete(tracker: BudgetTracker | null, trace: Trace): Promise<void> {
     const event: NotificationEvent = {
       type: "run_complete",
       agentName: this.name,
-      status: this._trace.status,
-      summary: this._tracker?.summary(),
-      traceId: this._trace.traceId,
+      status: trace.status,
+      summary: tracker?.summary(),
+      traceId: trace.traceId,
     };
 
     for (const handler of this.notifyHandlers) {
-      try { await handler(event); } catch { /* notification failures are non-fatal */ }
+      try { await handler(event); } catch (e) { process.stderr.write(`wickd: handler error: ${e}\n`); }
     }
 
     if (this.onRunComplete) {
-      try { await this.onRunComplete(event); } catch { /* notification failures are non-fatal */ }
+      try { await this.onRunComplete(event); } catch (e) { process.stderr.write(`wickd: handler error: ${e}\n`); }
     }
   }
 
-  private _printSummary(): void {
-    if (!this._trace) return;
-
-    const t = this._trace;
+  private _printSummary(tracker: BudgetTracker | null, trace: Trace): void {
     const icons: Record<string, string> = {
       completed: "\x1b[32m\u2713\x1b[0m",
       budget_killed: "\x1b[31m\u2717 KILLED\x1b[0m",
       error: "\x1b[31m\u2717 ERROR\x1b[0m",
     };
-    const icon = icons[t.status] ?? "?";
+    const icon = icons[trace.status] ?? "?";
 
     let budgetStr = "";
-    if (this._tracker && this.budget?.perRun) {
-      budgetStr = ` | budget: $${this._tracker.runSpend.toFixed(4)}/$${this.budget.perRun.toFixed(2)}`;
+    if (tracker && this.budget?.perRun) {
+      budgetStr = ` | budget: $${tracker.runSpend.toFixed(4)}/$${this.budget.perRun.toFixed(2)}`;
     }
 
-    const durationStr = t.durationMs() ? ` | ${t.durationMs()!.toFixed(0)}ms` : "";
-    const llmCalls = t.events.filter(e => e.eventType === "llm_call").length;
+    const durationStr = trace.durationMs() ? ` | ${trace.durationMs()!.toFixed(0)}ms` : "";
+    const llmCalls = trace.events.filter(e => e.eventType === "llm_call").length;
 
     process.stderr.write(
-      `[wickd] ${icon} ${t.agentName} \u2014 $${t.totalCost.toFixed(4)} cost | ${llmCalls} calls${budgetStr}${durationStr} | trace: ${t.traceId.slice(0, 8)}\n`,
+      `[wickd] ${icon} ${trace.agentName} \u2014 $${trace.totalCost.toFixed(4)} cost | ${llmCalls} calls${budgetStr}${durationStr} | trace: ${trace.traceId.slice(0, 8)}\n`,
     );
   }
 }

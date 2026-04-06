@@ -1,9 +1,14 @@
+import asyncio
 import functools
+import inspect
+import logging
 import os
 import sys
 import time
 import warnings
 from typing import Optional, Callable, Any
+
+logger = logging.getLogger("wickd")
 
 from wickd.budget import Budget, BudgetTracker, BudgetExceeded, WickdPatchError
 from wickd.trace import Trace, TraceEvent, TraceStore, CloudTraceSync
@@ -12,6 +17,10 @@ from wickd.interceptor import (
     verify_patches,
     set_active_tracker,
     set_active_trace,
+    get_active_tracker,
+    get_active_trace,
+    _active_tracker,
+    _active_trace,
 )
 
 
@@ -41,8 +50,6 @@ class WickdAgent:
         self.on_run_complete = on_run_complete
         self.notify_handlers = notify or []
         self.trace_store = TraceStore(trace_dir)
-        self._tracker: Optional[BudgetTracker] = None
-        self._trace: Optional[Trace] = None
 
         if on_patch_failure not in ("block", "warn", "allow"):
             raise ValueError(f"on_patch_failure must be 'block', 'warn', or 'allow', got '{on_patch_failure}'")
@@ -54,30 +61,22 @@ class WickdAgent:
         if endpoint and api_key:
             self._cloud_sync = CloudTraceSync(endpoint, api_key)
 
-        if self.budget and self.on_budget_kill:
-            original_on_kill = self.budget.on_kill
-            kill_handler = self.on_budget_kill
-
-            def combined_kill(summary):
-                if original_on_kill:
-                    original_on_kill(summary)
-                kill_handler({
-                    "type": "budget_kill",
-                    "agent_name": self.name,
-                    "spend": summary.get("run_spend", 0),
-                    "trigger": "budget_exceeded",
-                    "trace_id": self._trace.trace_id if self._trace else "unknown",
-                    "summary": summary,
-                })
-
-            self.budget.on_kill = combined_kill
-
         if auto_patch:
             patch_all()
             if on_patch_failure != "allow":
                 self._check_patches(on_patch_failure)
 
         functools.update_wrapper(self, fn)
+
+    @property
+    def _tracker(self) -> Optional[BudgetTracker]:
+        """Active run's tracker for the current async context (backward compat)."""
+        return get_active_tracker()
+
+    @property
+    def _trace(self) -> Optional[Trace]:
+        """Active run's trace for the current async context (backward compat)."""
+        return get_active_trace()
 
     def _check_patches(self, failure_mode: str):
         """Verify patches and handle failures based on configured mode."""
@@ -100,8 +99,24 @@ class WickdAgent:
             )
 
     def run(self, *args, **kwargs) -> Any:
-        """Execute the agent with guardrails."""
-        self._tracker = BudgetTracker(self.budget) if self.budget else None
+        """Execute the agent with guardrails. Use arun() for async agent functions."""
+        if inspect.iscoroutinefunction(self.fn):
+            raise TypeError(
+                f"Agent function '{self.name}' is async. Use agent.arun() instead of agent.run()."
+            )
+        return self._execute(*args, **kwargs)
+
+    async def arun(self, *args, **kwargs) -> Any:
+        """Execute an async agent function with guardrails."""
+        if not inspect.iscoroutinefunction(self.fn):
+            raise TypeError(
+                f"Agent function '{self.name}' is sync. Use agent.run() instead of agent.arun()."
+            )
+        return await self._execute_async(*args, **kwargs)
+
+    async def _execute_async(self, *args, **kwargs) -> Any:
+        """Async execution path — context vars propagate correctly across await."""
+        tracker = BudgetTracker(self.budget) if self.budget else None
 
         task_str = ""
         if args:
@@ -109,21 +124,32 @@ class WickdAgent:
         elif "task" in kwargs:
             task_str = str(kwargs["task"])[:200]
 
-        self._trace = Trace(agent_name=self.name, task=task_str)
-        set_active_tracker(self._tracker)
-        set_active_trace(self._trace)
+        trace = Trace(agent_name=self.name, task=task_str)
+        tracker_token = _active_tracker.set(tracker)
+        trace_token = _active_trace.set(trace)
 
         result = None
         try:
-            result = self.fn(*args, **kwargs)
-            self._trace.complete(
-                budget_summary=self._tracker.summary() if self._tracker else None
+            result = await self.fn(*args, **kwargs)
+            trace.complete(
+                budget_summary=tracker.summary() if tracker else None
             )
         except BudgetExceeded as e:
-            self._trace.add_budget_kill(trigger=e.trigger, spend=e.spent)
-            self._trace.complete(
-                budget_summary=self._tracker.summary() if self._tracker else None
+            trace.add_budget_kill(trigger=e.trigger, spend=e.spent)
+            trace.complete(
+                budget_summary=tracker.summary() if tracker else None
             )
+            if self.on_budget_kill:
+                try:
+                    self.on_budget_kill({
+                        "type": "budget_kill",
+                        "agent_name": self.name,
+                        "spend": e.spent,
+                        "trigger": e.trigger,
+                        "trace_id": trace.trace_id,
+                    })
+                except Exception as handler_err:
+                    logger.warning("Wickd handler failed: %s", handler_err)
             for handler in self.notify_handlers:
                 try:
                     handler({
@@ -131,49 +157,129 @@ class WickdAgent:
                         "agent_name": self.name,
                         "spend": e.spent,
                         "trigger": e.trigger,
-                        "trace_id": self._trace.trace_id,
+                        "trace_id": trace.trace_id,
                     })
-                except Exception:
-                    pass
+                except Exception as handler_err:
+                    logger.warning("Wickd handler failed: %s", handler_err)
             raise
         except Exception as e:
-            self._trace.status = "error"
-            self._trace.events.append(TraceEvent(
+            trace.status = "error"
+            trace.events.append(TraceEvent(
                 event_type="error",
                 error_message=str(e),
-                spend_at_event=self._trace.total_cost,
+                spend_at_event=trace.total_cost,
             ))
-            self._trace.complete(
-                budget_summary=self._tracker.summary() if self._tracker else None
+            trace.complete(
+                budget_summary=tracker.summary() if tracker else None
             )
             raise
         finally:
-            if self._trace:
-                self.trace_store.save(self._trace)
-                if self._cloud_sync:
-                    self._cloud_sync.sync(self._trace)
-            self._print_summary()
-            if self.on_run_complete and self._trace:
+            self.trace_store.save(trace)
+            if self._cloud_sync:
+                self._cloud_sync.sync(trace)
+            self._print_summary(tracker, trace)
+            if self.on_run_complete:
                 try:
                     self.on_run_complete({
                         "type": "run_complete",
                         "agent_name": self.name,
-                        "status": self._trace.status,
-                        "summary": self._tracker.summary() if self._tracker else {},
-                        "trace_id": self._trace.trace_id,
+                        "status": trace.status,
+                        "summary": tracker.summary() if tracker else {},
+                        "trace_id": trace.trace_id,
                     })
-                except Exception:
-                    pass
-            set_active_tracker(None)
-            set_active_trace(None)
+                except Exception as handler_err:
+                    logger.warning("Wickd handler failed: %s", handler_err)
+            _active_tracker.reset(tracker_token)
+            _active_trace.reset(trace_token)
 
         return result
 
-    def _print_summary(self):
-        if not self._trace:
-            return
+    def _execute(self, *args, **kwargs) -> Any:
+        """Sync execution path."""
+        tracker = BudgetTracker(self.budget) if self.budget else None
 
-        trace = self._trace
+        task_str = ""
+        if args:
+            task_str = str(args[0])[:200]
+        elif "task" in kwargs:
+            task_str = str(kwargs["task"])[:200]
+
+        trace = Trace(agent_name=self.name, task=task_str)
+
+        # Set per-run context, capturing tokens for correct restoration even
+        # when runs are interleaved in async code.
+        tracker_token = _active_tracker.set(tracker)
+        trace_token = _active_trace.set(trace)
+
+        result = None
+        try:
+            result = self.fn(*args, **kwargs)
+            trace.complete(
+                budget_summary=tracker.summary() if tracker else None
+            )
+        except BudgetExceeded as e:
+            trace.add_budget_kill(trigger=e.trigger, spend=e.spent)
+            trace.complete(
+                budget_summary=tracker.summary() if tracker else None
+            )
+            if self.on_budget_kill:
+                try:
+                    self.on_budget_kill({
+                        "type": "budget_kill",
+                        "agent_name": self.name,
+                        "spend": e.spent,
+                        "trigger": e.trigger,
+                        "trace_id": trace.trace_id,
+                    })
+                except Exception as handler_err:
+                    logger.warning("Wickd handler failed: %s", handler_err)
+            for handler in self.notify_handlers:
+                try:
+                    handler({
+                        "type": "budget_kill",
+                        "agent_name": self.name,
+                        "spend": e.spent,
+                        "trigger": e.trigger,
+                        "trace_id": trace.trace_id,
+                    })
+                except Exception as handler_err:
+                    logger.warning("Wickd handler failed: %s", handler_err)
+            raise
+        except Exception as e:
+            trace.status = "error"
+            trace.events.append(TraceEvent(
+                event_type="error",
+                error_message=str(e),
+                spend_at_event=trace.total_cost,
+            ))
+            trace.complete(
+                budget_summary=tracker.summary() if tracker else None
+            )
+            raise
+        finally:
+            self.trace_store.save(trace)
+            if self._cloud_sync:
+                self._cloud_sync.sync(trace)
+            self._print_summary(tracker, trace)
+            if self.on_run_complete:
+                try:
+                    self.on_run_complete({
+                        "type": "run_complete",
+                        "agent_name": self.name,
+                        "status": trace.status,
+                        "summary": tracker.summary() if tracker else {},
+                        "trace_id": trace.trace_id,
+                    })
+                except Exception as handler_err:
+                    logger.warning("Wickd handler failed: %s", handler_err)
+            # Restore the previous context values so nested/sequential runs
+            # are isolated without clobbering a parent run's context.
+            _active_tracker.reset(tracker_token)
+            _active_trace.reset(trace_token)
+
+        return result
+
+    def _print_summary(self, tracker: Optional[BudgetTracker], trace: Trace) -> None:
         status_icon = {
             "completed": "\033[32m✓\033[0m",
             "budget_killed": "\033[31m✗ KILLED\033[0m",
@@ -186,9 +292,9 @@ class WickdAgent:
             f"{sum(1 for e in trace.events if e.event_type == 'llm_call')} calls",
         ]
 
-        if self._tracker and self._tracker.budget.per_run:
+        if tracker and tracker.budget.per_run:
             parts.append(
-                f"budget: ${self._tracker.run_spend:.4f}/${self._tracker.budget.per_run:.2f}"
+                f"budget: ${tracker.run_spend:.4f}/${tracker.budget.per_run:.2f}"
             )
 
         if trace.duration_ms() is not None:
@@ -199,6 +305,8 @@ class WickdAgent:
         print(" | ".join(parts), file=sys.stderr)
 
     def __call__(self, *args, **kwargs) -> Any:
+        if inspect.iscoroutinefunction(self.fn):
+            return self.arun(*args, **kwargs)
         return self.run(*args, **kwargs)
 
 

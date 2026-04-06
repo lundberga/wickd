@@ -7,10 +7,13 @@ transitive dep of the OpenAI and Anthropic SDKs.
 """
 
 import json
+import logging
 import time
 from typing import Optional
 
 from wickd.interceptor import _patch_status, _record_call, get_active_tracker
+
+logger = logging.getLogger("wickd")
 
 PROVIDER_DOMAINS = {
     "api.openai.com": "openai",
@@ -58,8 +61,8 @@ def _intercept_response(response, provider: str, start: float):
         model, in_tok, out_tok = _extract_usage(body, provider)
         _record_call(provider, model, in_tok, out_tok,
                      (time.time() - start) * 1000, "", "")
-    except (json.JSONDecodeError, ValueError):
-        pass
+    except (json.JSONDecodeError, ValueError) as e:
+        logger.debug("Transport fallback: failed to parse response: %s", e)
 
 
 def patch_transport():
@@ -71,6 +74,7 @@ def patch_transport():
     try:
         import httpx
     except ImportError:
+        logger.warning("httpx not available; transport-layer fallback cannot activate")
         return
 
     orig_send = httpx.Client.send
@@ -109,7 +113,8 @@ def patch_transport():
             return response
 
         httpx.AsyncClient.send = patched_async_send
-    except AttributeError:
-        pass
+    except AttributeError as e:
+        logger.debug("Transport fallback: AsyncClient patch skipped: %s", e)
 
     _transport_patched = True
+    logger.debug("Transport-layer fallback activated")

@@ -5,10 +5,13 @@ Patches OpenAI, Anthropic, and Google GenAI SDKs at the method level.
 Falls back to httpx transport-layer interception when SDK patching fails.
 """
 
+import logging
 import time
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
+
+logger = logging.getLogger("wickd")
 
 from wickd.pricing import calculate_cost
 from wickd.trace import Trace, TraceEvent
@@ -252,6 +255,13 @@ class _StreamTracker:
             latency_ms, self._prompt_preview, self._response_preview,
         )
 
+    def __del__(self):
+        # Best-effort: finalize if the iterator was abandoned without a context manager.
+        try:
+            self.finalize()
+        except Exception:
+            pass
+
 
 class WickdSyncStream:
     """Wraps a sync streaming response, tracking cost on exhaustion."""
@@ -266,11 +276,14 @@ class WickdSyncStream:
     def __next__(self):
         try:
             chunk = next(self._stream)
-            self._tracker.on_chunk(chunk)
-            return chunk
         except StopIteration:
             self._tracker.finalize()
             raise
+        except Exception:
+            self._tracker.finalize()
+            raise
+        self._tracker.on_chunk(chunk)
+        return chunk
 
     def __enter__(self):
         if hasattr(self._stream, "__enter__"):
@@ -300,11 +313,14 @@ class WickdAsyncStream:
     async def __anext__(self):
         try:
             chunk = await self._stream.__anext__()
-            self._tracker.on_chunk(chunk)
-            return chunk
         except StopAsyncIteration:
             self._tracker.finalize()
             raise
+        except Exception:
+            self._tracker.finalize()
+            raise
+        self._tracker.on_chunk(chunk)
+        return chunk
 
     async def __aenter__(self):
         if hasattr(self._stream, "__aenter__"):
@@ -442,12 +458,17 @@ def _apply_patch(config: _ProviderConfig):
         return
 
     # Sync
-    target = config.resolve_target()
-    if not target:
+    try:
+        target = config.resolve_target()
+        if not target:
+            return
+        owner, attr = target
+        original = getattr(owner, attr)
+        setattr(owner, attr, _make_sync_wrapper(original, config))
+    except Exception as e:
+        _patch_status[name]["error"] = str(e)
+        logger.warning("Failed to patch %s: %s", name, e)
         return
-    owner, attr = target
-    original = getattr(owner, attr)
-    setattr(owner, attr, _make_sync_wrapper(original, config))
 
     # Async
     if config.resolve_async_target:
@@ -457,13 +478,14 @@ def _apply_patch(config: _ProviderConfig):
                 async_owner, async_attr = async_target
                 async_original = getattr(async_owner, async_attr)
                 setattr(async_owner, async_attr, _make_async_wrapper(async_original, config))
-        except AttributeError:
-            pass
+        except Exception as e:
+            logger.warning("Failed to patch async %s: %s", name, e)
 
     _patched[name] = True
     _patch_status[name]["patched"] = True
     if config.verify:
         _patch_status[name]["verified"] = config.verify()
+    logger.debug("Patched %s", name)
 
 
 # ── Provider target resolvers ──────────────────────────────────────────────
@@ -609,6 +631,7 @@ def patch_all():
     if has_unverified:
         try:
             from wickd.transport import patch_transport
+            logger.warning("SDK patch verification failed for one or more providers; activating transport-layer fallback")
             patch_transport()
         except ImportError:
             pass

@@ -130,7 +130,7 @@ export class BudgetTracker {
   private _kill(trigger: string): void {
     this._killed = true;
     // Must not let onKill errors mask the BudgetExceeded throw
-    try { this.budget.onKill?.(this.summary()); } catch { /* intentional */ }
+    try { this.budget.onKill?.(this.summary()); } catch (e) { process.stderr.write(`wickd: handler error: ${e}\n`); }
     throw new BudgetExceeded(this.budget, this._runSpend, trigger);
   }
 }

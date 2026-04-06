@@ -222,7 +222,13 @@ function wrapAsyncStream(
   const wrapped: AsyncIterableIterator<unknown> = {
     [Symbol.asyncIterator]() { return wrapped; },
     async next() {
-      const result = await iter.next();
+      let result: IteratorResult<unknown>;
+      try {
+        result = await iter.next();
+      } catch (err) {
+        finalizeStream(state);
+        throw err;
+      }
       if (result.done) finalizeStream(state);
       else handler(state, result.value);
       return result;
@@ -380,17 +386,29 @@ function applyPatch(name: string, resolve: () => Target, config: ProviderConfig,
     _patchStatus[name].installed = true;
   } catch { return; }
 
-  const target = resolve();
-  if (!target) return;
+  try {
+    const target = resolve();
+    if (!target) return;
 
-  target.owner.prototype[target.attr] = makeWrapper(
-    target.owner.prototype[target.attr] as (...args: unknown[]) => Promise<unknown>,
-    config,
-  );
+    target.owner.prototype[target.attr] = makeWrapper(
+      target.owner.prototype[target.attr] as (...args: unknown[]) => Promise<unknown>,
+      config,
+    );
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    _patchStatus[name].error = msg;
+    if (process.env.WICKD_DEBUG) {
+      process.stderr.write(`[wickd] Failed to patch ${name}: ${msg}\n`);
+    }
+    return;
+  }
 
   _patched[name] = true;
   _patchStatus[name].patched = true;
   _patchStatus[name].verified = verifier();
+  if (process.env.WICKD_DEBUG) {
+    process.stderr.write(`[wickd] Patched ${name}\n`);
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────

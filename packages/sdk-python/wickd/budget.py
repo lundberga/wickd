@@ -1,7 +1,10 @@
+import logging
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import Optional, Callable
+
+logger = logging.getLogger("wickd")
 
 
 class BudgetExceeded(Exception):
@@ -153,6 +156,6 @@ class BudgetTracker:
         if self.budget.on_kill:
             try:
                 self.budget.on_kill(self.summary())
-            except Exception:
-                pass  # Never let callback errors mask the budget kill
+            except Exception as e:
+                logger.warning("Wickd handler failed: %s", e)
         raise BudgetExceeded(self.budget, self._run_spend, trigger)

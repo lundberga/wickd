@@ -1,0 +1,80 @@
+name: SDK Compatibility Matrix
+
+on:
+  pull_request:
+    paths:
+      - "packages/sdk-python/wickd/interceptor.py"
+      - "packages/sdk-typescript/src/interceptor.ts"
+      - "packages/sdk-python/wickd/pricing.py"
+      - "packages/core/src/pricing.ts"
+  push:
+    branches: [main]
+    paths:
+      - "packages/sdk-python/wickd/interceptor.py"
+      - "packages/sdk-typescript/src/interceptor.ts"
+
+jobs:
+  python-compat:
+    name: "Python – openai=${{ matrix.openai }} anthropic=${{ matrix.anthropic }} (py${{ matrix.python }})"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13"]
+        openai: ["1.50.0", "1.60.0", "latest"]
+        anthropic: ["0.39.0", "0.42.0", "latest"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Install SDK with pinned providers
+        run: |
+          cd packages/sdk-python
+          pip install -e ".[dev]"
+          # Install specific SDK versions
+          if [ "${{ matrix.openai }}" = "latest" ]; then
+            pip install openai
+          else
+            pip install openai==${{ matrix.openai }}
+          fi
+          if [ "${{ matrix.anthropic }}" = "latest" ]; then
+            pip install anthropic
+          else
+            pip install anthropic==${{ matrix.anthropic }}
+          fi
+      - name: Run tests
+        run: |
+          cd packages/sdk-python
+          PYTHONPATH=. python3 -m pytest tests/ -v
+      - name: Verify patches work
+        run: |
+          cd packages/sdk-python
+          python3 -c "
+          from wickd.interceptor import patch_all, verify_patches
+          patch_all()
+          status = verify_patches()
+          print('Patch status:', status)
+          for provider, info in status.items():
+              if info['installed'] and not info['verified']:
+                  raise RuntimeError(f'Patch verification failed for {provider}: {info}')
+          print('All installed patches verified.')
+          "
+
+  typescript-compat:
+    name: "TypeScript – node=${{ matrix.node }}"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ["18", "20", "22"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Install and test
+        run: |
+          cd packages/sdk-typescript
+          npm ci
+          npx vitest run

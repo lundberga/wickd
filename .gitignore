@@ -1,0 +1,12 @@
+node_modules/
+dist/
+.next/
+.turbo/
+__pycache__/
+*.egg-info/
+*.pyc
+.pytest_cache/
+.env
+.env.local
+.DS_Store
+package-lock.json

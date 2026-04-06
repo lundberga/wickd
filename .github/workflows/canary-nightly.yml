@@ -1,0 +1,138 @@
+name: Canary – Latest SDK Versions
+
+on:
+  schedule:
+    - cron: "30 6 * * *"  # 6:30 AM UTC daily
+  workflow_dispatch: {}
+
+jobs:
+  python-canary:
+    name: "Python canary – latest + pre-release SDKs"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: "latest stable"
+            pip_flags: ""
+          - name: "pre-release"
+            pip_flags: "--pre"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install SDK + ${{ matrix.name }} providers
+        run: |
+          cd packages/sdk-python
+          pip install -e ".[dev]"
+          pip install ${{ matrix.pip_flags }} openai anthropic google-genai
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: |
+          cd packages/sdk-python
+          PYTHONPATH=. python3 -m pytest tests/ -v
+      - name: Verify patches
+        id: verify
+        continue-on-error: true
+        run: |
+          cd packages/sdk-python
+          python3 -c "
+          import openai, anthropic
+          print(f'openai=={openai.__version__}')
+          print(f'anthropic=={anthropic.__version__}')
+          from wickd.interceptor import patch_all, verify_patches
+          patch_all()
+          status = verify_patches()
+          print('Patch status:', status)
+          for provider, info in status.items():
+              if info['installed'] and not info['verified']:
+                  raise RuntimeError(f'CANARY FAILURE: {provider} patch broken: {info}')
+          print('All patches verified.')
+          "
+      - name: Open issue on failure
+        if: steps.tests.outcome == 'failure' || steps.verify.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `[Canary] SDK compatibility broken (${{ matrix.name }})`;
+            const body = [
+              `## Canary Failure`,
+              ``,
+              `**Configuration:** ${{ matrix.name }}`,
+              `**Tests:** ${{ steps.tests.outcome }}`,
+              `**Patch verification:** ${{ steps.verify.outcome }}`,
+              ``,
+              `The nightly canary detected a compatibility issue with ${{ matrix.name }} SDK versions.`,
+              ``,
+              `**Action required:** Check the [workflow run](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}) for details and update the interceptor if needed.`,
+            ].join('\n');
+
+            // Check if issue already exists
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'canary-failure',
+            });
+            const existing = issues.data.find(i => i.title === title);
+            if (!existing) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['canary-failure', 'bug'],
+              });
+            }
+
+  typescript-canary:
+    name: "TypeScript canary – latest SDKs"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Install with latest deps
+        run: |
+          cd packages/sdk-typescript
+          npm ci
+          npm install openai@latest @anthropic-ai/sdk@latest
+      - name: Run tests
+        id: tests
+        continue-on-error: true
+        run: |
+          cd packages/sdk-typescript
+          npx vitest run
+      - name: Open issue on failure
+        if: steps.tests.outcome == 'failure'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `[Canary] TypeScript SDK compatibility broken`;
+            const body = [
+              `## Canary Failure`,
+              ``,
+              `The nightly canary detected a TypeScript compatibility issue with latest SDK versions.`,
+              ``,
+              `Check the [workflow run](${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}) for details.`,
+            ].join('\n');
+
+            const issues = await github.rest.issues.listForRepo({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              state: 'open',
+              labels: 'canary-failure',
+            });
+            const existing = issues.data.find(i => i.title === title);
+            if (!existing) {
+              await github.rest.issues.create({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                title,
+                body,
+                labels: ['canary-failure', 'bug'],
+              });
+            }

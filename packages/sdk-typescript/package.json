@@ -1,6 +1,6 @@
 {
   "name": "wickd",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Guardrails for AI agents — budget limits, kill switches, and human approval gates.",
   "type": "module",
   "main": "./dist/index.js",

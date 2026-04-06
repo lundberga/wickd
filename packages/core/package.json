@@ -1,6 +1,6 @@
 {
   "name": "wickd-core",
-  "version": "0.1.0",
+  "version": "0.3.0",
   "description": "Shared trace schema, cost tables, and types for Wickd",
   "type": "module",
   "main": "./dist/index.js",

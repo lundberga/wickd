@@ -16,7 +16,7 @@ from wickd import notify
 from wickd.notify import slack_interactive
 from wickd import pricing
 
-__version__ = "0.1.0"
+__version__ = "0.3.0"
 
 __all__ = [
     "agent",

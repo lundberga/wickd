@@ -1,6 +1,6 @@
 {
   "name": "wickd",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Guardrails for AI agents — budget limits, kill switches, and human approval gates.",
   "type": "module",
   "main": "./dist/index.js",
@@ -10,9 +10,6 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     }
-  },
-  "bin": {
-    "wickd": "./dist/cli.js"
   },
   "scripts": {
     "build": "tsc",

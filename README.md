@@ -1,14 +1,9 @@
 <div align="center">
 
-<!-- Replace with your logo when ready:
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
-  <source media="(prefers-color-scheme: light)" srcset=".github/assets/logo-light.svg">
-  <img alt="Wickd" src=".github/assets/logo-light.svg" width="300">
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.png">
+  <img alt="Wickd" src=".github/assets/logo-dark.png" width="320">
 </picture>
--->
-
-# wickd
 
 **The runtime safety net for AI agents.**
 

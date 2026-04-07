@@ -75,8 +75,7 @@ def slack_interactive(webhook_url: str) -> Callable:
     """Send Slack Block Kit messages with interactive approve/deny buttons.
 
     Approval requests include clickable buttons that post back to a
-    Slack interaction endpoint (e.g. the Wickd dashboard
-    ``/api/slack`` route).  Other event types fall back to simple
+    Slack interaction endpoint.  Other event types fall back to simple
     text messages identical to :func:`slack`.
     """
 

@@ -2,7 +2,7 @@ export { agent, WickdAgent } from "./agent.js";
 export type { AgentOptions } from "./agent.js";
 
 export { Budget, BudgetTracker, BudgetExceeded, WickdPatchError } from "./budget.js";
-export { Trace, TraceStore, TraceEvent, CloudTraceSync } from "./trace.js";
+export { Trace, TraceStore, TraceEvent } from "./trace.js";
 
 export {
   approvalGate,

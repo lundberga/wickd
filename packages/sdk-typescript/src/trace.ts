@@ -245,30 +245,3 @@ export class TraceStore {
   }
 }
 
-export class CloudTraceSync {
-  private readonly endpoint: string;
-  private readonly apiKey: string;
-
-  constructor(endpoint: string, apiKey: string) {
-    this.endpoint = endpoint.replace(/\/+$/, "");
-    this.apiKey = apiKey;
-  }
-
-  /**
-   * Fire-and-forget sync: sends trace to the cloud endpoint.
-   * Does not block the agent. Errors are silently caught.
-   */
-  sync(trace: Trace): void {
-    const body = JSON.stringify(trace.toDict());
-    fetch(this.endpoint, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body,
-    }).catch(() => {
-      // Silently swallow errors — cloud sync is best-effort
-    });
-  }
-}

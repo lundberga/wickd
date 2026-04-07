@@ -2,7 +2,6 @@ import asyncio
 import functools
 import inspect
 import logging
-import os
 import sys
 import time
 import warnings
@@ -11,7 +10,7 @@ from typing import Optional, Callable, Any
 logger = logging.getLogger("wickd")
 
 from wickd.budget import Budget, BudgetTracker, BudgetExceeded, WickdPatchError
-from wickd.trace import Trace, TraceEvent, TraceStore, CloudTraceSync
+from wickd.trace import Trace, TraceEvent, TraceStore
 from wickd.interceptor import (
     patch_all,
     verify_patches,
@@ -39,8 +38,6 @@ class WickdAgent:
         trace_dir: Optional[str] = None,
         auto_patch: bool = True,
         on_patch_failure: str = "warn",
-        cloud_endpoint: Optional[str] = None,
-        cloud_api_key: Optional[str] = None,
     ):
         self.fn = fn
         self.name = name or fn.__name__
@@ -53,13 +50,6 @@ class WickdAgent:
 
         if on_patch_failure not in ("block", "warn", "allow"):
             raise ValueError(f"on_patch_failure must be 'block', 'warn', or 'allow', got '{on_patch_failure}'")
-
-        # Cloud sync: explicit args take precedence over env vars
-        endpoint = cloud_endpoint or os.environ.get("WICKD_CLOUD_ENDPOINT")
-        api_key = cloud_api_key or os.environ.get("WICKD_API_KEY")
-        self._cloud_sync: Optional[CloudTraceSync] = None
-        if endpoint and api_key:
-            self._cloud_sync = CloudTraceSync(endpoint, api_key)
 
         if auto_patch:
             patch_all()
@@ -175,8 +165,6 @@ class WickdAgent:
             raise
         finally:
             self.trace_store.save(trace)
-            if self._cloud_sync:
-                self._cloud_sync.sync(trace)
             self._print_summary(tracker, trace)
             if self.on_run_complete:
                 try:
@@ -258,8 +246,6 @@ class WickdAgent:
             raise
         finally:
             self.trace_store.save(trace)
-            if self._cloud_sync:
-                self._cloud_sync.sync(trace)
             self._print_summary(tracker, trace)
             if self.on_run_complete:
                 try:
@@ -322,8 +308,6 @@ def agent(
     trace_dir: Optional[str] = None,
     auto_patch: bool = True,
     on_patch_failure: str = "warn",
-    cloud_endpoint: Optional[str] = None,
-    cloud_api_key: Optional[str] = None,
 ) -> Any:
     """Decorator to wrap a function as a Wickd-guarded agent.
 
@@ -346,8 +330,6 @@ def agent(
             trace_dir=trace_dir,
             auto_patch=auto_patch,
             on_patch_failure=on_patch_failure,
-            cloud_endpoint=cloud_endpoint,
-            cloud_api_key=cloud_api_key,
         )
 
     if fn is not None:

@@ -9,7 +9,7 @@ from wickd.approvals import (
     auto_deny_handler,
 )
 from wickd.agent import agent
-from wickd.trace import Trace, TraceStore, CloudTraceSync
+from wickd.trace import Trace, TraceStore
 from wickd.interceptor import patch_openai, patch_anthropic, patch_google, patch_all, patch_status, verify_patches, status
 from wickd.tools import track_tool, tool_approval, record_tool_call
 from wickd import notify
@@ -32,7 +32,6 @@ __all__ = [
     "auto_deny_handler",
     "Trace",
     "TraceStore",
-    "CloudTraceSync",
     "patch_openai",
     "patch_anthropic",
     "patch_google",

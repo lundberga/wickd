@@ -588,32 +588,6 @@ def cmd_watch(args):
         print(f"\n{_C.BCYAN}[wickd watch]{_C.RESET} Stopped.")
 
 
-# ── wickd dashboard ───────────────────────────────────────────────────────────
-
-def cmd_dashboard(args):
-    """Print instructions for starting the web dashboard."""
-    print(f"\n{_C.BCYAN}{'=' * 50}{_C.RESET}")
-    print(f"  {_C.BOLD}Wickd Dashboard{_C.RESET}")
-    print(f"{_C.BCYAN}{'=' * 50}{_C.RESET}")
-    print()
-    print(f"  {_C.BOLD}Local development:{_C.RESET}")
-    print(f"    cd apps/web && npm install && npx next dev")
-    print(f"    Then open {_C.CYAN}http://localhost:3000{_C.RESET}")
-    print()
-    print(f"  {_C.BOLD}Hosted version:{_C.RESET}")
-    print(f"    wickd dashboard --cloud")
-    print()
-
-    if args.cloud:
-        print(f"  {_C.YELLOW}Cloud dashboard is not yet available.{_C.RESET}")
-        print(f"  Sign up for early access at {_C.CYAN}https://wickd.dev{_C.RESET}")
-        print()
-    else:
-        print(f"  {_C.DIM}Traces are stored in ~/.wickd/traces/{_C.RESET}")
-        print(f"  {_C.DIM}The dashboard reads these automatically.{_C.RESET}")
-        print()
-
-
 # ── wickd version ─────────────────────────────────────────────────────────────
 
 def cmd_version(args):
@@ -655,11 +629,6 @@ def main():
     watch_parser.add_argument("--agent", help="Filter to a specific agent name")
     watch_parser.add_argument("--all", action="store_true", help="Show all traces (default: most recent)")
     watch_parser.set_defaults(func=cmd_watch)
-
-    # dashboard
-    dashboard_parser = subparsers.add_parser("dashboard", help="Web dashboard for traces and analytics")
-    dashboard_parser.add_argument("--cloud", action="store_true", help="Info about hosted cloud dashboard")
-    dashboard_parser.set_defaults(func=cmd_dashboard)
 
     # version
     version_parser = subparsers.add_parser("version", help="Print version")

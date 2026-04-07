@@ -1,5 +1,5 @@
 import { Budget, BudgetTracker, BudgetExceeded, WickdPatchError } from "./budget.js";
-import { Trace, TraceStore, TraceEvent, CloudTraceSync } from "./trace.js";
+import { Trace, TraceStore, TraceEvent } from "./trace.js";
 import { patchAll, verifyPatches, runWithContext } from "./interceptor.js";
 import type { NotifyHandler } from "./notify.js";
 import type { NotificationEvent, BudgetSummary } from "wickd-core";
@@ -16,8 +16,6 @@ export interface AgentOptions<TArgs extends unknown[], TReturn> {
   autoPatch?: boolean;
   /** How to handle patch verification failures: "block" | "warn" | "allow". Default: "warn". */
   onPatchFailure?: "block" | "warn" | "allow";
-  cloudEndpoint?: string;
-  cloudApiKey?: string;
 }
 
 export class WickdAgent<TArgs extends unknown[], TReturn> {
@@ -29,7 +27,6 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
   readonly onRunComplete?: NotifyHandler;
   readonly notifyHandlers: NotifyHandler[];
   readonly traceStore: TraceStore;
-  private readonly _cloudSync: CloudTraceSync | null;
 
   constructor(options: AgentOptions<TArgs, TReturn>) {
     this.fn = options.fn;
@@ -40,11 +37,6 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
     this.onRunComplete = options.onRunComplete;
     this.notifyHandlers = options.notify ?? [];
     this.traceStore = new TraceStore(options.traceDir);
-
-    // Cloud sync: explicit options take precedence over env vars
-    const endpoint = options.cloudEndpoint ?? process.env.WICKD_CLOUD_ENDPOINT;
-    const apiKey = options.cloudApiKey ?? process.env.WICKD_API_KEY;
-    this._cloudSync = endpoint && apiKey ? new CloudTraceSync(endpoint, apiKey) : null;
 
     if (options.autoPatch !== false) {
       patchAll();
@@ -105,9 +97,6 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
       throw err;
     } finally {
       this.traceStore.save(trace);
-      if (this._cloudSync) {
-        this._cloudSync.sync(trace);
-      }
       this._printSummary(tracker, trace);
       await this._fireRunComplete(tracker, trace);
     }

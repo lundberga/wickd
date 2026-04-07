@@ -1,5 +1,5 @@
 /**
- * Wickd core types — shared between SDKs, dashboard, and CLI.
+ * Wickd core types — shared between SDKs.
  */
 
 // ── Budget ──────────────────────────────────────────────────────────────────

@@ -6,10 +6,7 @@ import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from threading import Thread
 from typing import Optional
-from urllib.request import Request, urlopen
-from urllib.error import URLError
 
 logger = logging.getLogger("wickd")
 
@@ -227,35 +224,3 @@ class TraceStore:
         return None
 
 
-class CloudTraceSync:
-    """Non-blocking cloud sync for completed traces.
-
-    POSTs trace JSON to a remote endpoint in a background thread.
-    Failures are logged as warnings and never crash the agent.
-    """
-
-    def __init__(self, endpoint: str, api_key: str):
-        self.endpoint = endpoint.rstrip("/")
-        self.api_key = api_key
-
-    def sync(self, trace: Trace) -> None:
-        """Fire-and-forget sync in a background daemon thread."""
-        thread = Thread(target=self._do_sync, args=(trace.to_dict(),), daemon=True)
-        thread.start()
-
-    def _do_sync(self, trace_dict: dict) -> None:
-        try:
-            data = json.dumps(trace_dict).encode("utf-8")
-            req = Request(
-                self.endpoint,
-                data=data,
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.api_key}",
-                },
-                method="POST",
-            )
-            with urlopen(req, timeout=10) as resp:
-                resp.read()
-        except (URLError, OSError, ValueError) as exc:
-            logger.warning("wickd cloud sync failed: %s", exc)

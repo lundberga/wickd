@@ -1,6 +1,6 @@
 {
   "name": "wickd",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Guardrails for AI agents — budget limits, kill switches, and human approval gates.",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,7 +16,15 @@
     "test": "vitest run",
     "dev": "tsc --watch"
   },
-  "keywords": ["ai", "agents", "guardrails", "budget", "observability", "llm", "safety"],
+  "keywords": [
+    "ai",
+    "agents",
+    "guardrails",
+    "budget",
+    "observability",
+    "llm",
+    "safety"
+  ],
   "author": "lundberga",
   "repository": {
     "type": "git",
@@ -24,7 +32,10 @@
     "directory": "packages/sdk-typescript"
   },
   "license": "MIT",
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "publishConfig": {
     "access": "public"
   },
@@ -32,18 +43,27 @@
     "wickd-core": "*"
   },
   "devDependencies": {
+    "@anthropic-ai/sdk": "^0.82.0",
+    "@google/genai": "^1.48.0",
+    "@types/node": "^22.0.0",
+    "openai": "^6.33.0",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "@types/node": "^22.0.0"
+    "vitest": "^3.0.0"
   },
   "peerDependencies": {
-    "openai": ">=4.0.0",
     "@anthropic-ai/sdk": ">=0.20.0",
-    "@google/genai": ">=1.0.0"
+    "@google/genai": ">=1.0.0",
+    "openai": ">=4.0.0"
   },
   "peerDependenciesMeta": {
-    "openai": { "optional": true },
-    "@anthropic-ai/sdk": { "optional": true },
-    "@google/genai": { "optional": true }
+    "openai": {
+      "optional": true
+    },
+    "@anthropic-ai/sdk": {
+      "optional": true
+    },
+    "@google/genai": {
+      "optional": true
+    }
   }
 }

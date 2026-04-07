@@ -326,8 +326,10 @@ type Target = { owner: { prototype: Record<string, unknown> }; attr: string } | 
 function resolveOpenAI(): Target {
   try {
     const openai = require("openai");
-    const cls = openai?.resources?.chat?.completions?.Completions;
-    return cls ? { owner: cls, attr: "create" } : null;
+    // openai.OpenAI.Chat.Completions is the actual class used by OpenAI instances.
+    // openai.OpenAI.Completions exists but is a different class (not used at runtime).
+    const cls = openai?.OpenAI?.Chat?.Completions ?? openai?.resources?.chat?.completions?.Completions;
+    return cls?.prototype?.create ? { owner: cls, attr: "create" } : null;
   } catch { return null; }
 }
 
@@ -344,7 +346,9 @@ function resolveGoogle(): Target {
   try {
     const genai = require("@google/genai");
     const cls = genai?.Models;
-    return cls?.prototype?.generateContent ? { owner: cls, attr: "generateContent" } : null;
+    // generateContent is set as an own property on each instance in the constructor;
+    // generateContentInternal is on the prototype and is what generateContent delegates to.
+    return cls?.prototype?.generateContentInternal ? { owner: cls, attr: "generateContentInternal" } : null;
   } catch { return null; }
 }
 

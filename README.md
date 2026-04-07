@@ -1,18 +1,50 @@
+<div align="center">
+
+<!-- Replace with your logo when ready:
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.svg">
+  <source media="(prefers-color-scheme: light)" srcset=".github/assets/logo-light.svg">
+  <img alt="Wickd" src=".github/assets/logo-light.svg" width="300">
+</picture>
+-->
+
 # wickd
 
-Runtime safety net for AI agents. Budget limits, kill switches, and approval gates — inside your agent, across every provider and tool.
+**The runtime safety net for AI agents.**
 
-```
-pip install wickd-ai
-```
+Budget limits, kill switches, and approval gates — inside your agent, across every provider.
 
-```
-npm install wickd
-```
+[![npm](https://img.shields.io/npm/v/wickd?color=blue&label=npm)](https://www.npmjs.com/package/wickd)
+[![PyPI](https://img.shields.io/pypi/v/wickd-ai?color=blue&label=pypi)](https://pypi.org/project/wickd-ai/)
+[![CI](https://img.shields.io/github/actions/workflow/status/lundberga/wickd/ci.yml?branch=main&label=CI)](https://github.com/lundberga/wickd/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9+-blue)](https://pypi.org/project/wickd-ai/)
+[![Node](https://img.shields.io/badge/node-18+-blue)](https://www.npmjs.com/package/wickd)
 
-## Quick start
+</div>
+
+---
+
+## Why Wickd?
+
+| | |
+|---|---|
+| **Zero latency** | Runs in-process. No proxy, no sidecar, no network hop. |
+| **43 models tracked** | Real-time pricing for OpenAI, Anthropic, and Google models. |
+| **1 decorator** | Add budget enforcement to any agent in one line of code. |
+| **Streaming-safe** | Tracks cost from streaming responses, including Anthropic `messages.stream()`. |
+| **Concurrent-safe** | Per-run budget isolation via `ContextVar` / `AsyncLocalStorage`. |
+| **292 tests** | Unit, integration, and real API tests across all 3 providers. |
+
+---
+
+## Quick Start
 
 ### Python
+
+```bash
+pip install wickd-ai
+```
 
 ```python
 import wickd
@@ -34,6 +66,10 @@ except wickd.BudgetExceeded as e:
 
 ### TypeScript
 
+```bash
+npm install wickd
+```
+
 ```typescript
 import { agent, Budget, BudgetExceeded } from "wickd";
 import OpenAI from "openai";
@@ -43,107 +79,132 @@ const myAgent = agent({
   budget: new Budget({ perRun: 0.50, daily: 5.00 }),
   fn: async (task: string) => {
     const client = new OpenAI();
-    const res = await client.chat.completions.create({
+    return await client.chat.completions.create({
       model: "gpt-4o",
       messages: [{ role: "user", content: task }],
     });
-    return res.choices[0].message.content;
   },
 });
 
 await myAgent.run("summarize this document");
 ```
 
-### Proxy mode (zero code changes)
+### Proxy Mode (zero code changes)
 
 ```bash
+pip install wickd-proxy
 wickd-proxy start --budget-per-run 0.50 --budget-daily 5.00
 
-# Point your SDK at the proxy
+# Just set an env var — your existing code works unchanged
 export OPENAI_BASE_URL=http://localhost:4319/openai/v1
 ```
 
+---
+
+## Supported Providers
+
+| Provider | Models | Streaming | Async |
+|----------|--------|:---------:|:-----:|
+| **OpenAI** | GPT-4o, GPT-4.1, o1, o3, o4-mini, ... | ✅ | ✅ |
+| **Anthropic** | Claude Opus 4, Sonnet 4, Haiku 4.5 | ✅ | ✅ |
+| **Google** | Gemini 2.5 Pro, 2.5 Flash | ✅ | ✅ |
+
+43 models with real-time pricing. Unknown models use conservative fallback estimates.
+
+---
+
 ## Features
 
-**Budget enforcement** — Per-run, daily, and monthly cost caps. Checked before the LLM response reaches your code.
+| Feature | Description |
+|---------|-------------|
+| **Budget enforcement** | Per-run, daily, and monthly cost caps. Checked before the response reaches your code. |
+| **Kill switches** | Automatic halt when spend exceeds limits. Raises `BudgetExceeded` immediately. |
+| **Approval gates** | Pause execution for human review. Slack, webhook, terminal, or custom handlers. |
+| **Streaming support** | Tracks cost from streaming responses. Auto-injects `stream_options` for OpenAI. |
+| **Tool tracking** | Trace MCP tool calls alongside LLM requests. Approval gates on dangerous tools. |
+| **Patch verification** | Runtime health checks confirm interception is active. Configurable: block, warn, or allow. |
+| **Transport fallback** | Falls back to httpx-level interception when SDK patching fails. |
+| **Async agents** | Full `async/await` support with `arun()`. Context isolation across concurrent runs. |
 
-**Kill switches** — Automatic halt when spend exceeds limits. Raises `BudgetExceeded` immediately.
+---
 
-**Approval gates** — Pause execution for human review. Slack, webhook, terminal, or custom handlers.
+## How It Works
 
-**Streaming support** — Tracks cost from streaming responses. Auto-injects `stream_options.include_usage` for OpenAI.
-
-**Tool tracking** — Trace MCP tool calls alongside LLM requests. Approval gates on dangerous tools.
-
-**Patch verification** — Runtime health checks confirm interception is active. Configurable failure modes: block, warn, or allow.
-
-**Transport fallback** — Falls back to httpx-level interception when SDK patching fails.
-
-**Proxy mode** — Budget enforcement via reverse proxy. Zero code changes — just set an env var.
-
-## Supported providers
-
-| Provider | Models | Streaming |
-|----------|--------|-----------|
-| OpenAI | GPT-4o, o1, o3, o4-mini, ... | Yes |
-| Anthropic | Claude Opus, Sonnet, Haiku | Yes |
-| Google | Gemini 2.0 Pro, Flash, ... | Yes |
-
-43 models tracked with real-time pricing. Unknown models use conservative fallback estimates.
-
-## How it works
-
-Wickd intercepts LLM SDK calls at the method level. When your agent calls `openai.chat.completions.create()`, Wickd's wrapper runs first — checks the budget, forwards the call, tracks the cost, and enforces the cap before returning the response.
+Wickd intercepts LLM SDK calls at the method level. No separate server. No network hop.
 
 ```
 Your agent code
-      |
-      v
-  Wickd interceptor (budget check, trace)
-      |
-      v
+      │
+      ▼
+  Wickd interceptor (budget check → trace → cost)
+      │
+      ▼
   OpenAI / Anthropic / Google SDK
-      |
-      v
+      │
+      ▼
   LLM API
 ```
 
-No separate server. No network hop. No latency added.
+When your agent calls `client.chat.completions.create()`, Wickd's wrapper:
 
-## Approval gates
+1. Checks budget before the call
+2. Forwards to the real SDK
+3. Reads token usage from the response
+4. Calculates cost and records it
+5. Checks budget again — kills the agent if exceeded
+6. Returns the response to your code
 
-```python
-@wickd.approval("delete_user", handler=wickd.webhook_approval_handler("https://..."))
-def delete_user(user_id: str):
-    db.users.delete(user_id)
+---
 
-@wickd.agent(budget=wickd.Budget(per_run=2.00))
-def support_agent(ticket_id: str):
-    delete_user("user_123")  # Pauses until human approves
+## Works With
+
+| Framework | Status |
+|-----------|:------:|
+| OpenAI SDK | ✅ |
+| Anthropic SDK | ✅ |
+| Google GenAI | ✅ |
+| LangGraph | ✅ |
+| CrewAI | ✅ |
+| Vercel AI SDK | ✅ |
+| OpenAI Agents SDK | ✅ |
+| Any Python/TS code | ✅ |
+
+Wickd is framework-agnostic. It patches at the LLM SDK level, so it works with any agent framework or custom code.
+
+---
+
+## Packages
+
+| Package | Install | Description |
+|---------|---------|-------------|
+| [`wickd`](https://www.npmjs.com/package/wickd) | `npm install wickd` | TypeScript SDK |
+| [`wickd-ai`](https://pypi.org/project/wickd-ai/) | `pip install wickd-ai` | Python SDK |
+| [`wickd-core`](https://www.npmjs.com/package/wickd-core) | `npm install wickd-core` | Shared types & pricing |
+| [`wickd-proxy`](https://pypi.org/project/wickd-proxy/) | `pip install wickd-proxy` | LLM proxy server |
+
+---
+
+## Contributing
+
+Contributions welcome. Please open an issue first to discuss what you'd like to change.
+
+```bash
+git clone https://github.com/lundberga/wickd.git
+cd wickd
+npm install && npm run build          # TypeScript
+cd packages/sdk-python && pip install -e ".[dev]"  # Python
 ```
 
-## Tool tracking
+Run tests:
 
-```python
-@wickd.track_tool(name="search_db", server="postgres-mcp")
-def search(query: str) -> list:
-    return db.search(query)
-
-@wickd.tool_approval(name="send_email", handler=wickd.webhook_approval_handler("https://..."))
-def send_email(to: str, body: str):
-    mailer.send(to, body)
+```bash
+npm run build && cd packages/sdk-typescript && npx vitest run   # TypeScript
+cd packages/sdk-python && PYTHONPATH=. python -m pytest tests/  # Python
+cd packages/proxy && PYTHONPATH=../sdk-python:. python -m pytest tests/  # Proxy
 ```
 
-## Health checks
-
-```python
-import wickd
-
-status = wickd.status()
-# {'patches': {'openai': {'installed': True, 'patched': True, 'verified': True}, ...},
-#  'sdk_versions': {'openai': '1.60.0', 'anthropic': '0.42.0'}}
-```
+---
 
 ## License
 
-MIT
+[MIT](LICENSE)

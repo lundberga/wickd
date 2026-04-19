@@ -48,12 +48,24 @@ jobs:
         run: npm install && npm run build
 
       - name: Publish wickd-core
-        run: cd packages/core && npm publish --access public || echo "Version may already exist"
+        run: |
+          cd packages/core
+          if npm view "wickd-core@$(node -p "require('./package.json').version")" > /dev/null 2>&1; then
+            echo "Version already published, skipping"
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Publish wickd
-        run: cd packages/sdk-typescript && npm publish --access public || echo "Version may already exist"
+        run: |
+          cd packages/sdk-typescript
+          if npm view "wickd@$(node -p "require('./package.json').version")" > /dev/null 2>&1; then
+            echo "Version already published, skipping"
+          else
+            npm publish --access public
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 

@@ -10,3 +10,6 @@ __pycache__/
 .env.local
 .DS_Store
 CLAUDE.md
+.claude/
+*.tgz
+*.whl

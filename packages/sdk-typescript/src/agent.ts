@@ -3,6 +3,7 @@ import { Trace, TraceStore, TraceEvent } from "./trace.js";
 import { patchAll, verifyPatches, runWithContext } from "./interceptor.js";
 import type { NotifyHandler } from "./notify.js";
 import type { NotificationEvent, BudgetSummary } from "wickd-core";
+import type { ApprovalHandler } from "./approvals.js";
 
 export interface AgentOptions<TArgs extends unknown[], TReturn> {
   fn: (...args: TArgs) => TReturn | Promise<TReturn>;
@@ -16,6 +17,10 @@ export interface AgentOptions<TArgs extends unknown[], TReturn> {
   autoPatch?: boolean;
   /** How to handle patch verification failures: "block" | "warn" | "allow". Default: "warn". */
   onPatchFailure?: "block" | "warn" | "allow";
+  /** MCP tool names that must pass human approval before executing. */
+  mcpApprovalRequired?: string[];
+  /** Handler invoked when an MCP tool in the allowlist is called. */
+  mcpApprovalHandler?: ApprovalHandler;
 }
 
 export class WickdAgent<TArgs extends unknown[], TReturn> {
@@ -27,6 +32,8 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
   readonly onRunComplete?: NotifyHandler;
   readonly notifyHandlers: NotifyHandler[];
   readonly traceStore: TraceStore;
+  readonly mcpApprovalRequired: string[];
+  readonly mcpApprovalHandler?: ApprovalHandler;
 
   constructor(options: AgentOptions<TArgs, TReturn>) {
     this.fn = options.fn;
@@ -37,6 +44,8 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
     this.onRunComplete = options.onRunComplete;
     this.notifyHandlers = options.notify ?? [];
     this.traceStore = new TraceStore(options.traceDir);
+    this.mcpApprovalRequired = options.mcpApprovalRequired ?? [];
+    this.mcpApprovalHandler = options.mcpApprovalHandler;
 
     if (options.autoPatch !== false) {
       patchAll();
@@ -74,11 +83,20 @@ export class WickdAgent<TArgs extends unknown[], TReturn> {
 
     let result: TReturn;
 
+    const runInner = () => this.fn(...args);
+    const runScoped = this.mcpApprovalRequired.length > 0 || this.mcpApprovalHandler
+      ? () => {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const { runWithMcpApprovalConfig } = require("./mcpPatch.js") as typeof import("./mcpPatch.js");
+          return runWithMcpApprovalConfig(
+            { required: this.mcpApprovalRequired, handler: this.mcpApprovalHandler ?? null },
+            runInner,
+          );
+        }
+      : runInner;
+
     try {
-      result = await runWithContext(
-        { tracker, trace },
-        () => this.fn(...args),
-      );
+      result = await runWithContext({ tracker, trace }, runScoped);
       trace.complete(tracker?.summary());
     } catch (err) {
       if (err instanceof BudgetExceeded) {

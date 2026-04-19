@@ -194,7 +194,9 @@ class TestInterceptorPatchStatus:
     def test_verify_patches_returns_dict_with_all_providers(self):
         from wickd.interceptor import verify_patches
         result = verify_patches()
-        assert set(result.keys()) == {"openai", "anthropic", "google"}
+        # Core LLM providers must always be present. The "mcp" key is
+        # surfaced alongside when the optional mcp package is installed.
+        assert {"openai", "anthropic", "google"}.issubset(result.keys())
 
     def test_unpatched_providers_are_not_verified(self):
         from wickd.interceptor import patch_status

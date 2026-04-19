@@ -11,6 +11,12 @@ export interface BudgetConfig {
   daily?: number;
   /** Max USD spend per calendar month across all runs. */
   monthly?: number;
+  /** Hard cap on LLM round-trips per run. Runaway-loop guard. */
+  maxLlmCalls?: number;
+  /** Hard cap on tool/MCP invocations per run. Runaway-loop guard. */
+  maxToolCalls?: number;
+  /** Hard cap on wall-clock seconds per run. Runaway-loop guard. */
+  maxDurationSeconds?: number;
 }
 
 export interface BudgetSummary {
@@ -18,6 +24,8 @@ export interface BudgetSummary {
   dailySpend: number;
   monthlySpend: number;
   callCount: number;
+  toolCallCount: number;
+  elapsedSeconds: number;
   remaining: number | null;
   killed: boolean;
   caps: BudgetConfig;

@@ -34,6 +34,18 @@ export function getActiveTrace(): Trace | null {
   return storage.getStore()?.trace ?? null;
 }
 
+/** Increment the active tracker's tool-call counter, enforcing runaway guards.
+ *
+ * No-op when no tracker is active. Called from `tools.ts` and `mcpPatch.ts`
+ * after a tool has run.
+ */
+export function recordToolCallOnTracker(): void {
+  const tracker = getActiveTracker();
+  if (tracker !== null) {
+    tracker.recordToolCall();
+  }
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────
 
 function safeGet(obj: unknown, ...keys: string[]): unknown {
@@ -433,6 +445,14 @@ export function patchAll(): void {
   patchOpenAI();
   patchAnthropic();
   patchGoogle();
+  // Auto-track MCP tool calls when the SDK is installed.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { patchMcp } = require("./mcpPatch.js") as typeof import("./mcpPatch.js");
+    patchMcp();
+  } catch {
+    /* MCP module missing — safe to ignore. */
+  }
 }
 
 export function patchStatus(): Record<string, PatchProviderStatus> {
@@ -448,7 +468,20 @@ export function verifyPatches(): Record<string, PatchProviderStatus> {
   for (const [name, fn] of Object.entries(verifiers)) {
     if (_patchStatus[name].patched) _patchStatus[name].verified = fn();
   }
-  return patchStatus();
+  const status = patchStatus();
+  // Surface MCP status when available.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { mcpPatchStatus, verifyMcpPatch } = require("./mcpPatch.js") as typeof import("./mcpPatch.js");
+    verifyMcpPatch();
+    const mcp = mcpPatchStatus();
+    if (mcp.installed) {
+      (status as Record<string, PatchProviderStatus>).mcp = mcp as unknown as PatchProviderStatus;
+    }
+  } catch {
+    /* ignore */
+  }
+  return status;
 }
 
 export function healthStatus(): { patches: Record<string, PatchProviderStatus>; sdkVersions: Record<string, string> } {

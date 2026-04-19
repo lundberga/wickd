@@ -11,8 +11,9 @@ import functools
 import time
 from typing import Callable, Optional, Any
 
-from wickd.interceptor import get_active_trace
+from wickd.interceptor import get_active_trace, _record_tool_call_on_tracker
 from wickd.approvals import ApprovalGate, ApprovalDenied
+from wickd.budget import BudgetExceeded
 
 MAX_PREVIEW = 200
 
@@ -36,6 +37,10 @@ def _trace_tool(tool_name: str, server: Optional[str], latency_ms: float,
             tool_input=input_preview, tool_output=output_preview,
             tool_status=status, tool_server=server,
         )
+    # Count actual invocations (success/error) toward the runaway guard.
+    # Denials are intentional stops, not runaway, so they don't count.
+    if status != "denied":
+        _record_tool_call_on_tracker()
 
 
 def track_tool(name: Optional[str] = None, server: Optional[str] = None) -> Callable:
@@ -56,11 +61,16 @@ def track_tool(name: Optional[str] = None, server: Optional[str] = None) -> Call
             start = time.time()
             try:
                 result = fn(*args, **kwargs)
-                _trace_tool(tool_name, server, (time.time() - start) * 1000, preview, result, "success")
-                return result
+            except BudgetExceeded:
+                # Runaway guard tripped during the tool body — propagate unaltered.
+                raise
             except Exception as exc:
                 _trace_tool(tool_name, server, (time.time() - start) * 1000, preview, exc, "error")
                 raise
+            # Success path. If the tracker now trips a runaway guard,
+            # surface BudgetExceeded as-is; do NOT re-trace as a tool error.
+            _trace_tool(tool_name, server, (time.time() - start) * 1000, preview, result, "success")
+            return result
 
         @functools.wraps(fn)
         async def async_wrapper(*args, **kwargs):
@@ -68,11 +78,13 @@ def track_tool(name: Optional[str] = None, server: Optional[str] = None) -> Call
             start = time.time()
             try:
                 result = await fn(*args, **kwargs)
-                _trace_tool(tool_name, server, (time.time() - start) * 1000, preview, result, "success")
-                return result
+            except BudgetExceeded:
+                raise
             except Exception as exc:
                 _trace_tool(tool_name, server, (time.time() - start) * 1000, preview, exc, "error")
                 raise
+            _trace_tool(tool_name, server, (time.time() - start) * 1000, preview, result, "success")
+            return result
 
         return async_wrapper if asyncio.iscoroutinefunction(fn) else sync_wrapper
     return decorator

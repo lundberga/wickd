@@ -70,12 +70,20 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Build package
+      - name: Build SDK
         run: |
           pip install build
           cd packages/sdk-python && python -m build
 
-      - name: Publish to PyPI
+      - name: Publish SDK to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: packages/sdk-python/dist/
+
+      - name: Build proxy
+        run: cd packages/proxy && python -m build
+
+      - name: Publish proxy to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: packages/proxy/dist/

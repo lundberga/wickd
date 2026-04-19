@@ -24,6 +24,26 @@ export {
   healthStatus,
 } from "./interceptor.js";
 
+export {
+  trackTool,
+  toolApproval,
+  recordToolCall,
+} from "./tools.js";
+export type {
+  TrackToolOptions,
+  ToolApprovalOptions,
+  RecordToolCallOptions,
+} from "./tools.js";
+
+export {
+  patchMcp,
+  verifyMcpPatch,
+  mcpPatchStatus,
+  unpatchMcp,
+  runWithMcpApprovalConfig,
+} from "./mcpPatch.js";
+export type { McpPatchStatus } from "./mcpPatch.js";
+
 export * as notify from "./notify.js";
 export { slackInteractive } from "./notify.js";
 

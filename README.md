@@ -84,6 +84,49 @@ const myAgent = agent({
 await myAgent.run("summarize this document");
 ```
 
+### Runaway guards
+
+Stop infinite tool-calling loops before they drain the budget. Any cap is optional; combine freely with cost caps:
+
+```python
+@wickd.agent(budget=wickd.Budget(
+    per_run=1.00,                # dollar cap
+    max_llm_calls=20,            # at most 20 LLM round-trips per run
+    max_tool_calls=50,           # at most 50 MCP/tool invocations
+    max_duration_seconds=60,     # wall-clock kill after 60s
+))
+def my_agent(task):
+    ...
+```
+
+When any cap trips, `BudgetExceeded` is raised with the specific trigger (`max_llm_calls`, `max_tool_calls`, `max_duration`, `per_run`, etc.) — the trace records which guard fired.
+
+### MCP awareness
+
+Wickd auto-tracks every `mcp.ClientSession.call_tool()` call the agent makes — no decorators, no wrapping. Optional: flag dangerous tools for human approval.
+
+```bash
+pip install wickd-ai[mcp]
+```
+
+```python
+import wickd
+from mcp import ClientSession
+
+@wickd.agent(
+    budget=wickd.Budget(per_run=1.00),
+    mcp_approval_required=["drop_table", "send_email"],
+    mcp_approval_handler=wickd.webhook_approval_handler("https://approvals.example.com/hook"),
+)
+async def research_agent(topic: str, session: ClientSession):
+    docs = await session.call_tool("search_docs", {"q": topic})
+    # `drop_table` is gated — pauses for human approval before running
+    await session.call_tool("drop_table", {"table": "stale_cache"})
+    return docs
+```
+
+Every call shows up in the trace alongside LLM calls — same schema, same dashboard.
+
 ### Proxy Mode (zero code changes)
 
 ```bash
@@ -113,9 +156,11 @@ export OPENAI_BASE_URL=http://localhost:4319/openai/v1
 | Feature | Description |
 |---------|-------------|
 | **Budget enforcement** | Per-run, daily, and monthly cost caps. Checked before the response reaches your code. |
-| **Kill switches** | Automatic halt when spend exceeds limits. Raises `BudgetExceeded` immediately. |
+| **Runaway guards** | Non-cost kill switches: `max_llm_calls`, `max_tool_calls`, `max_duration_seconds`. Stops infinite loops before they drain the budget. |
+| **Kill switches** | Automatic halt when spend or usage exceeds limits. Raises `BudgetExceeded` immediately. |
 | **Approval gates** | Pause execution for human review. Slack, webhook, terminal, or custom handlers. |
 | **Streaming support** | Tracks cost from streaming responses. Auto-injects `stream_options` for OpenAI. |
+| **MCP awareness** | Auto-patches `mcp.ClientSession.call_tool` — every MCP tool call is tracked with latency, server name, and status, no decorator required. Approval gates on dangerous tools. |
 | **Tool tracking** | Trace MCP tool calls alongside LLM requests. Approval gates on dangerous tools. |
 | **Patch verification** | Runtime health checks confirm interception is active. Configurable: block, warn, or allow. |
 | **Transport fallback** | Falls back to httpx-level interception when SDK patching fails. |

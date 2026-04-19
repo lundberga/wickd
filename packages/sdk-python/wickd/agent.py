@@ -38,6 +38,8 @@ class WickdAgent:
         trace_dir: Optional[str] = None,
         auto_patch: bool = True,
         on_patch_failure: str = "warn",
+        mcp_approval_required: Optional[list[str]] = None,
+        mcp_approval_handler: Optional[Callable] = None,
     ):
         self.fn = fn
         self.name = name or fn.__name__
@@ -47,6 +49,8 @@ class WickdAgent:
         self.on_run_complete = on_run_complete
         self.notify_handlers = notify or []
         self.trace_store = TraceStore(trace_dir)
+        self.mcp_approval_required = list(mcp_approval_required or [])
+        self.mcp_approval_handler = mcp_approval_handler
 
         if on_patch_failure not in ("block", "warn", "allow"):
             raise ValueError(f"on_patch_failure must be 'block', 'warn', or 'allow', got '{on_patch_failure}'")
@@ -67,6 +71,31 @@ class WickdAgent:
     def _trace(self) -> Optional[Trace]:
         """Active run's trace for the current async context (backward compat)."""
         return get_active_trace()
+
+    def _push_mcp_approval_config(self):
+        """Push this agent's MCP approval config into the current context.
+
+        Returns a reset token, or None if the mcp_patch module is unavailable
+        or no config was specified.
+        """
+        if not self.mcp_approval_required and self.mcp_approval_handler is None:
+            return None
+        try:
+            from wickd.mcp_patch import set_mcp_approval_config
+        except ImportError:
+            return None
+        return set_mcp_approval_config(
+            self.mcp_approval_required, self.mcp_approval_handler
+        )
+
+    def _pop_mcp_approval_config(self, tokens):
+        if tokens is None:
+            return
+        try:
+            from wickd.mcp_patch import reset_mcp_approval_config
+        except ImportError:
+            return
+        reset_mcp_approval_config(tokens)
 
     def _check_patches(self, failure_mode: str):
         """Verify patches and handle failures based on configured mode."""
@@ -117,6 +146,7 @@ class WickdAgent:
         trace = Trace(agent_name=self.name, task=task_str)
         tracker_token = _active_tracker.set(tracker)
         trace_token = _active_trace.set(trace)
+        mcp_tokens = self._push_mcp_approval_config()
 
         result = None
         try:
@@ -177,6 +207,7 @@ class WickdAgent:
                     })
                 except Exception as handler_err:
                     logger.warning("Wickd handler failed: %s", handler_err)
+            self._pop_mcp_approval_config(mcp_tokens)
             _active_tracker.reset(tracker_token)
             _active_trace.reset(trace_token)
 
@@ -198,6 +229,7 @@ class WickdAgent:
         # when runs are interleaved in async code.
         tracker_token = _active_tracker.set(tracker)
         trace_token = _active_trace.set(trace)
+        mcp_tokens = self._push_mcp_approval_config()
 
         result = None
         try:
@@ -260,6 +292,7 @@ class WickdAgent:
                     logger.warning("Wickd handler failed: %s", handler_err)
             # Restore the previous context values so nested/sequential runs
             # are isolated without clobbering a parent run's context.
+            self._pop_mcp_approval_config(mcp_tokens)
             _active_tracker.reset(tracker_token)
             _active_trace.reset(trace_token)
 
@@ -308,6 +341,8 @@ def agent(
     trace_dir: Optional[str] = None,
     auto_patch: bool = True,
     on_patch_failure: str = "warn",
+    mcp_approval_required: Optional[list[str]] = None,
+    mcp_approval_handler: Optional[Callable] = None,
 ) -> Any:
     """Decorator to wrap a function as a Wickd-guarded agent.
 
@@ -316,6 +351,10 @@ def agent(
             "block" - raise WickdPatchError (recommended for production)
             "warn"  - emit a warning (default)
             "allow" - silent, run unprotected
+        mcp_approval_required: Tool names whose MCP calls must pass
+            human approval before executing.
+        mcp_approval_handler: Handler for MCP approval requests. Defaults to
+            the terminal handler.
     """
 
     def decorator(func: Callable) -> WickdAgent:
@@ -330,6 +369,8 @@ def agent(
             trace_dir=trace_dir,
             auto_patch=auto_patch,
             on_patch_failure=on_patch_failure,
+            mcp_approval_required=mcp_approval_required,
+            mcp_approval_handler=mcp_approval_handler,
         )
 
     if fn is not None:

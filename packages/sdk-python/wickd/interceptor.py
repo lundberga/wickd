@@ -58,6 +58,17 @@ def _record_call(provider: str, model: str, input_tokens: int, output_tokens: in
     return cost
 
 
+def _record_tool_call_on_tracker() -> None:
+    """Increment the active tracker's tool-call counter, enforcing caps.
+
+    Call after a tool has run (or been denied/errored) to update the
+    runaway guards. No-op if no tracker is active.
+    """
+    tracker = get_active_tracker()
+    if tracker is not None:
+        tracker.record_tool_call()
+
+
 # ── Provider registry ──────────────────────────────────────────────────────
 # Each provider defines how to locate its SDK method, extract usage from
 # responses and streaming chunks, and pull prompt/response previews.
@@ -797,6 +808,13 @@ def patch_all():
         _apply_patch(provider)
     _patch_anthropic_stream()
 
+    # Auto-track MCP tool calls when the mcp package is installed.
+    try:
+        from wickd.mcp_patch import patch_mcp
+        patch_mcp()
+    except ImportError:
+        pass
+
     has_unverified = any(
         s["installed"] and not s["verified"] for s in _patch_status.values()
     )
@@ -819,7 +837,17 @@ def verify_patches() -> dict:
     for name, verifier in _VERIFIERS.items():
         if _patch_status[name]["patched"]:
             _patch_status[name]["verified"] = verifier()
-    return patch_status()
+    status_copy = patch_status()
+    # Surface MCP status alongside LLM providers when the mcp package is installed.
+    try:
+        from wickd.mcp_patch import mcp_patch_status, verify_mcp_patch
+        verify_mcp_patch()
+        mcp_status = mcp_patch_status()
+        if mcp_status.get("installed"):
+            status_copy["mcp"] = mcp_status
+    except ImportError:
+        pass
+    return status_copy
 
 
 def status() -> dict:
@@ -834,6 +862,11 @@ def status() -> dict:
     try:
         import google.genai
         info["sdk_versions"]["google"] = getattr(google.genai, "__version__", "unknown")
+    except ImportError:
+        pass
+    try:
+        import mcp
+        info["sdk_versions"]["mcp"] = getattr(mcp, "__version__", "unknown")
     except ImportError:
         pass
     return info

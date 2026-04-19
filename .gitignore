@@ -13,3 +13,5 @@ CLAUDE.md
 .claude/
 *.tgz
 *.whl
+LAUNCH.md
+RELEASE.md

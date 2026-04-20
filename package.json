@@ -8,5 +8,16 @@
     "type": "git",
     "url": "https://github.com/lundberga/wickd.git"
   },
-  "homepage": "https://wickd.dev"
+  "homepage": "https://wickd.dev",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "test": "npm test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
 }

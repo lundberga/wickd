@@ -11,6 +11,8 @@ Once running, point your SDK at it:
 
 ```bash
 export OPENAI_BASE_URL="http://127.0.0.1:4319/openai/v1"
+export ANTHROPIC_BASE_URL="http://127.0.0.1:4319/anthropic"
+# Gemini: configure the client to use http://127.0.0.1:4319/google as the API base
 ```
 
 Your agent code does not change. The proxy forwards the request to the real OpenAI API, records a span with token counts and cost, and returns the upstream response unmodified.
@@ -23,8 +25,8 @@ This package is landing in sub-commits. Track what is and isn't wired here:
 | --- | --- |
 | OpenAI non-streaming chat completions | ✅ |
 | OpenAI streaming (SSE) | ✅ |
-| Anthropic Messages | planned |
-| Google Gemini | planned |
+| Anthropic Messages (streaming + non-streaming) | ✅ |
+| Google Gemini `generateContent` / `streamGenerateContent` | ✅ |
 | MCP stdio proxy | planned |
 | MCP HTTP proxy | planned |
 | CLI (`wickd start`) | planned |

@@ -7,7 +7,7 @@ export interface ProviderContext {
   readonly store: Store;
   readonly runTracker: RunTracker;
   readonly upstreamBaseUrl: string;
-  readonly fetch: typeof fetch;
+  readonly fetch: typeof globalThis.fetch;
 }
 
 export type ProviderHandler = (

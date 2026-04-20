@@ -1,18 +1,12 @@
 {
   "name": "wickd",
+  "version": "0.0.0",
   "private": true,
-  "packageManager": "npm@11.11.0",
-  "workspaces": [
-    "packages/*"
-  ],
-  "scripts": {
-    "build": "turbo build",
-    "test": "turbo test",
-    "lint": "turbo lint",
-    "dev": "turbo dev"
+  "license": "MIT",
+  "description": "Cost and control for custom AI agents.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/lundberga/wickd.git"
   },
-  "devDependencies": {
-    "turbo": "^2.4.0",
-    "typescript": "^5.7.0"
-  }
+  "homepage": "https://wickd.dev"
 }

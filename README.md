@@ -1,250 +1,39 @@
-<div align="center">
+# Wickd
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset=".github/assets/logo-dark.png">
-  <img alt="Wickd" src=".github/assets/logo-dark.png" width="320">
-</picture>
+Cost and control for custom AI agents.
 
-**The runtime safety net for AI agents.**
+See what your Python or TypeScript agent spends — across every LLM, every MCP tool, every run — and stop it before it burns you.
 
-Budget limits, kill switches, and approval gates — inside your agent, across every provider.
+## Status
 
-[![npm](https://img.shields.io/npm/v/wickd?color=blue&label=npm)](https://www.npmjs.com/package/wickd)
-[![PyPI](https://img.shields.io/pypi/v/wickd-ai?color=blue&label=pypi)](https://pypi.org/project/wickd-ai/)
-[![CI](https://img.shields.io/github/actions/workflow/status/lundberga/wickd/ci.yml?branch=main&label=CI)](https://github.com/lundberga/wickd/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.9+-blue)](https://pypi.org/project/wickd-ai/)
-[![Node](https://img.shields.io/badge/node-18+-blue)](https://www.npmjs.com/package/wickd)
+This repo is being rebuilt from scratch as **v1**. Nothing in `main` is usable yet.
 
-</div>
+Old releases (v0.x) are archived on the [`v0-legacy`](https://github.com/lundberga/wickd/tree/v0-legacy) branch and tagged [`v0.5.0-final`](https://github.com/lundberga/wickd/releases/tag/v0.5.0-final). They still install from PyPI and npm, but receive no further updates.
 
----
+## What v1 will be
 
-## Why Wickd?
-
-| | |
-|---|---|
-| **Zero latency** | Runs in-process. No proxy, no sidecar, no network hop. |
-| **43 models tracked** | Real-time pricing for OpenAI, Anthropic, and Google models. |
-| **1 decorator** | Add budget enforcement to any agent in one line of code. |
-| **Streaming-safe** | Tracks cost from streaming responses, including Anthropic `messages.stream()`. |
-| **Concurrent-safe** | Per-run budget isolation via `ContextVar` / `AsyncLocalStorage`. |
-| **292 tests** | Unit, integration, and real API tests across all 3 providers. |
-
----
-
-## Quick Start
-
-### Python
-
-```bash
-pip install wickd-ai
-```
-
-```python
-import wickd
-import openai
-
-@wickd.agent(budget=wickd.Budget(per_run=0.50, daily=5.00))
-def my_agent(task: str):
-    client = openai.OpenAI()
-    return client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": task}],
-    )
-
-try:
-    result = my_agent.run("summarize this document")
-except wickd.BudgetExceeded as e:
-    print(f"Agent stopped: {e}")
-```
-
-### TypeScript
-
-```bash
-npm install wickd
-```
-
-```typescript
-import { agent, Budget, BudgetExceeded } from "wickd";
-import OpenAI from "openai";
-
-const myAgent = agent({
-  name: "my_agent",
-  budget: new Budget({ perRun: 0.50, daily: 5.00 }),
-  fn: async (task: string) => {
-    const client = new OpenAI();
-    return await client.chat.completions.create({
-      model: "gpt-4o",
-      messages: [{ role: "user", content: task }],
-    });
-  },
-});
-
-await myAgent.run("summarize this document");
-```
-
-### Runaway guards
-
-Stop infinite tool-calling loops before they drain the budget. Any cap is optional; combine freely with cost caps:
-
-```python
-@wickd.agent(budget=wickd.Budget(
-    per_run=1.00,                # dollar cap
-    max_llm_calls=20,            # at most 20 LLM round-trips per run
-    max_tool_calls=50,           # at most 50 MCP/tool invocations
-    max_duration_seconds=60,     # wall-clock kill after 60s
-))
-def my_agent(task):
-    ...
-```
-
-When any cap trips, `BudgetExceeded` is raised with the specific trigger (`max_llm_calls`, `max_tool_calls`, `max_duration`, `per_run`, etc.) — the trace records which guard fired.
-
-### MCP awareness
-
-Wickd auto-tracks every `mcp.ClientSession.call_tool()` call the agent makes — no decorators, no wrapping. Optional: flag dangerous tools for human approval.
-
-```bash
-pip install wickd-ai[mcp]
-```
-
-```python
-import wickd
-from mcp import ClientSession
-
-@wickd.agent(
-    budget=wickd.Budget(per_run=1.00),
-    mcp_approval_required=["drop_table", "send_email"],
-    mcp_approval_handler=wickd.webhook_approval_handler("https://approvals.example.com/hook"),
-)
-async def research_agent(topic: str, session: ClientSession):
-    docs = await session.call_tool("search_docs", {"q": topic})
-    # `drop_table` is gated — pauses for human approval before running
-    await session.call_tool("drop_table", {"table": "stale_cache"})
-    return docs
-```
-
-Every call shows up in the trace alongside LLM calls — same schema, same dashboard.
-
-### Proxy Mode (zero code changes)
-
-```bash
-pip install wickd-proxy
-wickd-proxy start --budget-per-run 0.50 --budget-daily 5.00
-
-# Just set an env var — your existing code works unchanged
-export OPENAI_BASE_URL=http://localhost:4319/openai/v1
-```
-
----
-
-## Supported Providers
-
-| Provider | Models | Streaming | Async |
-|----------|--------|:---------:|:-----:|
-| **OpenAI** | GPT-4o, GPT-4.1, o1, o3, o4-mini, ... | ✅ | ✅ |
-| **Anthropic** | Claude Opus 4, Sonnet 4, Haiku 4.5 | ✅ | ✅ |
-| **Google** | Gemini 2.5 Pro, 2.5 Flash | ✅ | ✅ |
-
-43 models with real-time pricing. Unknown models use conservative fallback estimates.
-
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| **Budget enforcement** | Per-run, daily, and monthly cost caps. Checked before the response reaches your code. |
-| **Runaway guards** | Non-cost kill switches: `max_llm_calls`, `max_tool_calls`, `max_duration_seconds`. Stops infinite loops before they drain the budget. |
-| **Kill switches** | Automatic halt when spend or usage exceeds limits. Raises `BudgetExceeded` immediately. |
-| **Approval gates** | Pause execution for human review. Slack, webhook, terminal, or custom handlers. |
-| **Streaming support** | Tracks cost from streaming responses. Auto-injects `stream_options` for OpenAI. |
-| **MCP awareness** | Auto-patches `mcp.ClientSession.call_tool` — every MCP tool call is tracked with latency, server name, and status, no decorator required. Approval gates on dangerous tools. |
-| **Tool tracking** | Trace MCP tool calls alongside LLM requests. Approval gates on dangerous tools. |
-| **Patch verification** | Runtime health checks confirm interception is active. Configurable: block, warn, or allow. |
-| **Transport fallback** | Falls back to httpx-level interception when SDK patching fails. |
-| **Async agents** | Full `async/await` support with `arun()`. Context isolation across concurrent runs. |
-
----
-
-## How It Works
-
-Wickd intercepts LLM SDK calls at the method level. No separate server. No network hop.
+A single binary that sits between your agent and everything it calls:
 
 ```
-Your agent code
-      │
-      ▼
-  Wickd interceptor (budget check → trace → cost)
-      │
-      ▼
-  OpenAI / Anthropic / Google SDK
-      │
-      ▼
-  LLM API
+agent ──▶ wickd ──▶ OpenAI / Anthropic / Google
+                 ──▶ MCP servers (stdio or HTTP)
 ```
 
-When your agent calls `client.chat.completions.create()`, Wickd's wrapper:
+You set one environment variable. Your code does not change. Every LLM call, every MCP tool call, every cost, every latency gets recorded into one trace per agent run. You see it in a local dashboard. Budgets stop the run before it overspends.
 
-1. Checks budget before the call
-2. Forwards to the real SDK
-3. Reads token usage from the response
-4. Calculates cost and records it
-5. Checks budget again — kills the agent if exceeded
-6. Returns the response to your code
+Nothing else gives you a unified run trace across LLM and MCP today. That is the wedge.
 
----
+## Roadmap
 
-## Works With
+Built brick by brick. Each brick ships when it is rock solid.
 
-| Framework | Status |
-|-----------|:------:|
-| OpenAI SDK | ✅ |
-| Anthropic SDK | ✅ |
-| Google GenAI | ✅ |
-| LangGraph | ✅ |
-| CrewAI | ✅ |
-| Vercel AI SDK | ✅ |
-| OpenAI Agents SDK | ✅ |
-| Any Python/TS code | ✅ |
-
-Wickd is framework-agnostic. It patches at the LLM SDK level, so it works with any agent framework or custom code.
-
----
-
-## Packages
-
-| Package | Install | Description |
-|---------|---------|-------------|
-| [`wickd`](https://www.npmjs.com/package/wickd) | `npm install wickd` | TypeScript SDK |
-| [`wickd-ai`](https://pypi.org/project/wickd-ai/) | `pip install wickd-ai` | Python SDK |
-| [`wickd-core`](https://www.npmjs.com/package/wickd-core) | `npm install wickd-core` | Shared types & pricing |
-| [`wickd-proxy`](https://pypi.org/project/wickd-proxy/) | `pip install wickd-proxy` | LLM proxy server |
-
----
-
-## Contributing
-
-Contributions welcome. Please open an issue first to discuss what you'd like to change.
-
-```bash
-git clone https://github.com/lundberga/wickd.git
-cd wickd
-npm install && npm run build          # TypeScript
-cd packages/sdk-python && pip install -e ".[dev]"  # Python
-```
-
-Run tests:
-
-```bash
-npm run build && cd packages/sdk-typescript && npx vitest run   # TypeScript
-cd packages/sdk-python && PYTHONPATH=. python -m pytest tests/  # Python
-cd packages/proxy && PYTHONPATH=../sdk-python:. python -m pytest tests/  # Proxy
-```
-
----
+1. **Core** — data model, SQLite storage, cost catalog
+2. **Proxy** — LLM HTTP proxy + MCP stdio/HTTP proxy, single binary
+3. **SDK** — thin Python and TypeScript clients for advanced inline use
+4. **Dashboard** — local web UI, bundled into the proxy binary
+5. **Cloud** — hosted team dashboard, shared budgets, audit log
+6. **Plugins** — Claude Code, Cursor, MCP directory integrations
 
 ## License
 
-[MIT](LICENSE)
+MIT. See [LICENSE](LICENSE).

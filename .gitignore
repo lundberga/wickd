@@ -1,17 +1,58 @@
+# dependencies
 node_modules/
+
+# builds
 dist/
+build/
+out/
 .next/
 .turbo/
+
+# python
 __pycache__/
-*.egg-info/
 *.pyc
+*.pyo
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# env & secrets
 .env
-.env.local
+.env.*
+!.env.example
+
+# editor
+.vscode/
+.idea/
+*.swp
+
+# os
 .DS_Store
-CLAUDE.md
-.claude/
+Thumbs.db
+
+# logs
+*.log
+
+# package artifacts
 *.tgz
 *.whl
+
+# databases
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+
+# coverage
+coverage/
+.coverage
+.nyc_output/
+
+# local notes / config
+CLAUDE.md
+.claude/
 LAUNCH.md
 RELEASE.md

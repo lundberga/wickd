@@ -123,24 +123,6 @@ describe("OpenAI chat completions proxy", () => {
     expect(response.status).toBe(400);
   });
 
-  it("refuses streaming with 501 until streaming lands", async () => {
-    const proxy = createProxy({
-      store,
-      config: { ...DEFAULT_CONFIG, dbPath: ":memory:" },
-      fetch: mockFetch(() => {
-        throw new Error("should not reach upstream");
-      }),
-    });
-
-    const response = await proxy.app.request("/openai/v1/chat/completions", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ model: "gpt-4o", stream: true }),
-    });
-
-    expect(response.status).toBe(501);
-  });
-
   it("propagates upstream error status codes", async () => {
     const proxy = createProxy({
       store,
